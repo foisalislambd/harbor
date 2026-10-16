@@ -1,0 +1,15 @@
+services:
+  harbor:
+    build: .
+    ports:
+      - "8787:8787"
+    environment:
+      HARBOR_ADDR: ":8787"
+      HARBOR_DATA_DIR: /data
+      HARBOR_PANEL_DIR: /panel
+    volumes:
+      - harbor-data:/data
+    restart: unless-stopped
+
+volumes:
+  harbor-data:

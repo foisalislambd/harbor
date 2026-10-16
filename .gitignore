@@ -1,0 +1,11 @@
+data/
+*.db
+*.db-wal
+*.db-shm
+apps/panel/node_modules/
+apps/panel/dist/
+apps/server/harbor
+apps/server/harbor.exe
+.DS_Store
+.env
+.env.*
