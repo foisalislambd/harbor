@@ -6,7 +6,7 @@ COPY apps/panel/ ./
 RUN npm run build
 
 FROM golang:1.26-alpine AS server
-ARG VERSION=0.1.0
+ARG VERSION=0.1.1
 WORKDIR /src
 COPY apps/server/go.mod apps/server/go.sum ./
 RUN go mod download

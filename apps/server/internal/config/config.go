@@ -8,7 +8,7 @@ import (
 )
 
 // Version is the release in VERSION.md. Release builds override it with -ldflags.
-var Version = "0.1.0"
+var Version = "0.1.1"
 
 type Config struct {
 	Addr         string

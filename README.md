@@ -13,11 +13,11 @@ The repository is [foisalislambd/harbor](https://github.com/foisalislambd/harbor
 ### Docker
 
 ```bash
-docker pull ghcr.io/foisalislambd/harbor:0.1.0
-docker run -d --name harbor -p 8787:8787 -v harbor-data:/data ghcr.io/foisalislambd/harbor:0.1.0
+docker pull ghcr.io/foisalislambd/harbor:0.1.1
+docker run -d --name harbor -p 8787:8787 -v harbor-data:/data ghcr.io/foisalislambd/harbor:0.1.1
 
 # or Docker Hub
-docker pull foisalislambd/harbor:0.1.0
+docker pull foisalislambd/harbor:0.1.1
 ```
 
 Open http://127.0.0.1:8787. The first visit creates the owner account. Data stays in the `harbor-data` volume.
@@ -27,7 +27,7 @@ Open http://127.0.0.1:8787. The first visit creates the owner account. Data stay
 ```yaml
 services:
   harbor:
-    image: foisalislambd/harbor:0.1.0
+    image: foisalislambd/harbor:0.1.1
     ports:
       - "8787:8787"
     volumes:
@@ -44,13 +44,13 @@ docker compose up -d
 
 The release binary includes the same panel. Run it and a window opens on this computer. The first visit creates the owner account. Backups stay in the user data folder, and the API listens only on `127.0.0.1:8787`.
 
-Windows: download [harbor-windows-amd64.exe](https://github.com/foisalislambd/harbor/releases/download/v0.1.0/harbor-windows-amd64.exe) and open it. Data is in `%AppData%\Harbor`.
+Windows: download [harbor-windows-amd64.exe](https://github.com/foisalislambd/harbor/releases/download/v0.1.1/harbor-windows-amd64.exe) and open it. Data is in `%AppData%\Harbor`.
 
 Linux:
 
 ```bash
-curl -fsSL -o harbor "https://github.com/foisalislambd/harbor/releases/download/v0.1.0/harbor-linux-amd64"
-curl -fsSL -o SHA256SUMS "https://github.com/foisalislambd/harbor/releases/download/v0.1.0/SHA256SUMS"
+curl -fsSL -o harbor "https://github.com/foisalislambd/harbor/releases/download/v0.1.1/harbor-linux-amd64"
+curl -fsSL -o SHA256SUMS "https://github.com/foisalislambd/harbor/releases/download/v0.1.1/SHA256SUMS"
 grep harbor-linux-amd64 SHA256SUMS | sha256sum -c -
 chmod +x harbor
 ./harbor
@@ -58,7 +58,7 @@ chmod +x harbor
 
 Data is in `~/.local/share/harbor` (or `$XDG_DATA_HOME/harbor`). Close the window to stop Harbor.
 
-macOS: download `harbor-darwin-arm64` or `harbor-darwin-amd64` from the [release](https://github.com/foisalislambd/harbor/releases/tag/v0.1.0), `chmod +x` it, and run it. Data is in `~/Library/Application Support/Harbor`.
+macOS: download `harbor-darwin-arm64` or `harbor-darwin-amd64` from the [release](https://github.com/foisalislambd/harbor/releases/tag/v0.1.1), `chmod +x` it, and run it. Data is in `~/Library/Application Support/Harbor`.
 
 Other archives on the release: `harbor-linux-arm64`. The same binary also sends backups:
 
