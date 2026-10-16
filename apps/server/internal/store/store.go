@@ -665,6 +665,10 @@ func (s *Store) EnforceRetention(ctx context.Context, projectID string) ([]Backu
 			}
 			doomed = append(doomed, bid)
 		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
 		rows.Close()
 	}
 	if p.RetentionCount > 0 {
@@ -679,6 +683,10 @@ func (s *Store) EnforceRetention(ctx context.Context, projectID string) ([]Backu
 				return nil, err
 			}
 			doomed = append(doomed, bid)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
 		}
 		rows.Close()
 	}

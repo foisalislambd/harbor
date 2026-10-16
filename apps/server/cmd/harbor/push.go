@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -33,32 +32,49 @@ func push(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
-	var body bytes.Buffer
-	w := multipart.NewWriter(&body)
-	_ = w.WriteField("name", *name)
-	_ = w.WriteField("kind", *kind)
-	_ = w.WriteField("source", *source)
-	_ = w.WriteField("note", *note)
-	_ = w.WriteField("tags", *tags)
-	part, err := w.CreateFormFile("file", filepath.Base(*file))
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(part, f); err != nil {
-		return err
-	}
-	if err := w.Close(); err != nil {
-		return err
-	}
+	body, writer := io.Pipe()
+	form := multipart.NewWriter(writer)
+	go func() {
+		var copyErr error
+		defer func() {
+			f.Close()
+			if copyErr != nil {
+				writer.CloseWithError(copyErr)
+				return
+			}
+			writer.CloseWithError(form.Close())
+		}()
+		if copyErr = form.WriteField("name", *name); copyErr != nil {
+			return
+		}
+		if copyErr = form.WriteField("kind", *kind); copyErr != nil {
+			return
+		}
+		if copyErr = form.WriteField("source", *source); copyErr != nil {
+			return
+		}
+		if copyErr = form.WriteField("note", *note); copyErr != nil {
+			return
+		}
+		if copyErr = form.WriteField("tags", *tags); copyErr != nil {
+			return
+		}
+		part, err := form.CreateFormFile("file", filepath.Base(*file))
+		if err != nil {
+			copyErr = err
+			return
+		}
+		_, copyErr = io.Copy(part, f)
+	}()
 
-	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(*endpoint, "/")+"/api/v1/push", &body)
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(*endpoint, "/")+"/api/v1/push", body)
 	if err != nil {
+		body.Close()
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+*token)
-	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("Content-Type", form.FormDataContentType())
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err

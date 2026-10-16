@@ -160,6 +160,45 @@ func TestPausedProjectRejectsPush(t *testing.T) {
 	}
 }
 
+func TestCreateProjectDefaultsRetention(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	handler := New(config.Config{DataDir: dir, MaxUpload: 1024, SessionTTL: time.Hour}, st).Handler()
+	setup := postJSON(t, handler, "/api/v1/setup", map[string]string{
+		"name": "Ada", "email": "ada@example.com", "password": "correct-horse",
+	}, "")
+	created := postJSON(t, handler, "/api/v1/projects", map[string]any{
+		"name": "Bare", "description": "",
+	}, cookie(setup))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create %d %s", created.Code, created.Body.String())
+	}
+	var project store.Project
+	if err := json.Unmarshal(created.Body.Bytes(), &project); err != nil {
+		t.Fatal(err)
+	}
+	if project.RetentionCount != 14 || project.RetentionDays != 30 || project.QuotaBytes != 0 {
+		t.Fatalf("defaults = %+v", project)
+	}
+	unlimited := postJSON(t, handler, "/api/v1/projects", map[string]any{
+		"name": "Forever", "description": "", "retention_count": 0, "retention_days": 0, "quota_bytes": 0,
+	}, cookie(setup))
+	if unlimited.Code != http.StatusCreated {
+		t.Fatalf("unlimited %d %s", unlimited.Code, unlimited.Body.String())
+	}
+	var open store.Project
+	if err := json.Unmarshal(unlimited.Body.Bytes(), &open); err != nil {
+		t.Fatal(err)
+	}
+	if open.RetentionCount != 0 || open.RetentionDays != 0 {
+		t.Fatalf("explicit zero was replaced: %+v", open)
+	}
+}
+
 func TestReadOnlyKeyCannotPush(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(dir)

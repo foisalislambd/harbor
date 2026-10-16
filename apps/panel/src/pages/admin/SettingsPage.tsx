@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 export default function SettingsPage() {
   const { admin } = useAdminAuth();
+  const isOwner = admin?.role === "owner";
   const [settings, setSettings] = useState<Settings | null>(null);
   const [users, setUsers] = useState<SessionUser[]>([]);
   const [name, setName] = useState("");
@@ -43,10 +44,13 @@ export default function SettingsPage() {
           className="admin-card"
           onSubmit={(e) => {
             e.preventDefault();
+            setError(null);
             void api("/api/v1/settings", {
               method: "PUT",
               body: JSON.stringify({ instance_name: settings.instance_name }),
-            }).then(() => setMessage("Instance name saved"));
+            })
+              .then(() => setMessage("Instance name saved"))
+              .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not save settings"));
           }}
         >
           <div className="admin-card-body space-y-4">
@@ -93,10 +97,12 @@ export default function SettingsPage() {
       <section className="admin-card">
         <div className="admin-card-body space-y-4">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">Team</h2>
+          {isOwner && (
           <form
             className="grid gap-3 md:grid-cols-4"
             onSubmit={(e) => {
               e.preventDefault();
+              setError(null);
               void api("/api/v1/users", {
                 method: "POST",
                 body: JSON.stringify({ name, email, password }),
@@ -105,7 +111,7 @@ export default function SettingsPage() {
                 setEmail("");
                 setPassword("");
                 return load();
-              });
+              }).catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not add user"));
             }}
           >
             <input className={fieldClass} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -113,6 +119,7 @@ export default function SettingsPage() {
             <input className={fieldClass} type="password" placeholder="Password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required />
             <button className={primaryButtonClass} type="submit">Add user</button>
           </form>
+          )}
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {users.map((user) => (
               <li key={user.id} className="flex items-center justify-between py-3 text-sm">
@@ -120,8 +127,17 @@ export default function SettingsPage() {
                   <span className="font-medium text-gray-900 dark:text-white">{user.name}</span>
                   <span className="text-gray-500"> · {user.email} · {user.role}</span>
                 </span>
-                {user.id !== admin?.id && (
-                  <button type="button" className={dangerButtonClass} onClick={() => void api(`/api/v1/users/${user.id}`, { method: "DELETE" }).then(load)}>
+                {isOwner && user.id !== admin?.id && (
+                  <button
+                    type="button"
+                    className={dangerButtonClass}
+                    onClick={() => {
+                      setError(null);
+                      void api(`/api/v1/users/${user.id}`, { method: "DELETE" })
+                        .then(load)
+                        .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not remove user"));
+                    }}
+                  >
                     Remove
                   </button>
                 )}

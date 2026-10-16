@@ -4,28 +4,37 @@ import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { dangerButtonClass, fieldClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
 import { api, downloadBackup, formatBytes, formatWhen, type Backup, type Project } from "@/lib/harbor-api";
 import { Archive } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+
+const pageSize = 50;
 
 export default function BackupsPage() {
   const [params, setParams] = useSearchParams();
   const q = params.get("q") ?? "";
   const projectId = params.get("project_id") ?? "";
+  const page = Math.max(1, Number.parseInt(params.get("page") || "1", 10) || 1);
+  const [draftQuery, setDraftQuery] = useState(q);
   const [projects, setProjects] = useState<Project[]>([]);
   const [items, setItems] = useState<Backup[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [uploadProject, setUploadProject] = useState(projectId);
   const [file, setFile] = useState<File | null>(null);
+  const [fileKey, setFileKey] = useState(0);
   const [kind, setKind] = useState("archive");
   const [uploading, setUploading] = useState(false);
+  const requestId = useRef(0);
 
-  async function load(nextQ = q, nextProject = projectId) {
+  async function load(nextQ = q, nextProject = projectId, nextPage = page) {
     const query = new URLSearchParams();
     if (nextQ) query.set("q", nextQ);
     if (nextProject) query.set("project_id", nextProject);
-    query.set("limit", "50");
+    query.set("limit", String(pageSize));
+    query.set("offset", String((nextPage - 1) * pageSize));
+    const id = ++requestId.current;
     const res = await api<{ items: Backup[]; total: number }>(`/api/v1/backups?${query.toString()}`);
+    if (id !== requestId.current) return;
     setItems(res.items);
     setTotal(res.total);
   }
@@ -37,9 +46,10 @@ export default function BackupsPage() {
   }, []);
 
   useEffect(() => {
+    setDraftQuery(q);
     setUploadProject(projectId);
     load().catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load backups"));
-  }, [q, projectId]);
+  }, [q, projectId, page]);
 
   async function upload(e: React.FormEvent) {
     e.preventDefault();
@@ -54,6 +64,7 @@ export default function BackupsPage() {
       body.set("source", "panel");
       await api(`/api/v1/projects/${uploadProject}/backups`, { method: "POST", body });
       setFile(null);
+      setFileKey((value) => value + 1);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
@@ -81,7 +92,7 @@ export default function BackupsPage() {
             <option value="files">Files</option>
             <option value="other">Other</option>
           </select>
-          <input className={fieldClass} type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
+          <input key={fileKey} className={fieldClass} type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
           <button className={primaryButtonClass} disabled={uploading} type="submit">{uploading ? "Uploading…" : "Upload"}</button>
         </div>
       </form>
@@ -90,13 +101,15 @@ export default function BackupsPage() {
         <input
           className={fieldClass}
           placeholder="Search name, source, checksum"
-          defaultValue={q}
+          value={draftQuery}
+          onChange={(e) => setDraftQuery(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              const value = (e.target as HTMLInputElement).value;
               const next = new URLSearchParams(params);
+              const value = draftQuery.trim();
               if (value) next.set("q", value);
               else next.delete("q");
+              next.delete("page");
               setParams(next);
             }
           }}
@@ -108,6 +121,7 @@ export default function BackupsPage() {
             const next = new URLSearchParams(params);
             if (e.target.value) next.set("project_id", e.target.value);
             else next.delete("project_id");
+            next.delete("page");
             setParams(next);
           }}
         >
@@ -149,7 +163,15 @@ export default function BackupsPage() {
                   <td className="px-4 py-3">{formatBytes(backup.size_bytes)}</td>
                   <td className="px-4 py-3">{formatWhen(backup.created_at)}</td>
                   <td className="px-4 py-3 text-right">
-                    <button type="button" className={quietButtonClass} onClick={() => void downloadBackup(backup.id, backup.filename)}>
+                    <button
+                      type="button"
+                      className={quietButtonClass}
+                      onClick={() => {
+                        void downloadBackup(backup.id, backup.filename).catch((err: unknown) =>
+                          setError(err instanceof Error ? err.message : "Download failed"),
+                        );
+                      }}
+                    >
                       Download
                     </button>
                     <button
@@ -157,7 +179,10 @@ export default function BackupsPage() {
                       className={dangerButtonClass}
                       onClick={() => {
                         if (!confirm(`Delete ${backup.name}?`)) return;
-                        void api(`/api/v1/backups/${backup.id}`, { method: "DELETE" }).then(() => load());
+                        setError(null);
+                        void api(`/api/v1/backups/${backup.id}`, { method: "DELETE" })
+                          .then(() => load())
+                          .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not delete backup"));
                       }}
                     >
                       Delete
@@ -167,7 +192,37 @@ export default function BackupsPage() {
               ))}
             </tbody>
           </table>
-          <p className="px-4 py-3 text-xs text-gray-500">{total} total</p>
+          <div className="flex items-center justify-between px-4 py-3 text-xs text-gray-500">
+            <span>{total} total</span>
+            {total > pageSize && (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className={quietButtonClass}
+                  disabled={page <= 1}
+                  onClick={() => {
+                    const next = new URLSearchParams(params);
+                    next.set("page", String(page - 1));
+                    setParams(next);
+                  }}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className={quietButtonClass}
+                  disabled={page * pageSize >= total}
+                  onClick={() => {
+                    const next = new URLSearchParams(params);
+                    next.set("page", String(page + 1));
+                    setParams(next);
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

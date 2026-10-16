@@ -110,7 +110,14 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, { ...init, headers, credentials: "include" });
   if (res.status === 204) return undefined as T;
   const text = await res.text();
-  const data = text ? (JSON.parse(text) as { error?: string }) : {};
+  let data: { error?: string } = {};
+  if (text) {
+    try {
+      data = JSON.parse(text) as { error?: string };
+    } catch {
+      data = { error: text.slice(0, 200) };
+    }
+  }
   if (!res.ok) {
     throw new ApiError(res.status, data.error || res.statusText);
   }

@@ -167,6 +167,33 @@ func TestSharedBlobRemovedOnlyAfterLastReference(t *testing.T) {
 	}
 }
 
+func TestDeleteProjectDropsBackupsAndBlob(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	project, err := st.CreateProject(ctx, "Gone", "", 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := strings.Repeat("ef", 32)
+	writeBlob(t, st, sum)
+	backup, err := st.CreateBackup(ctx, Backup{
+		ProjectID: project.ID, Name: "snap", Filename: "a.bin", Kind: "archive",
+		SizeBytes: 2, Checksum: sum, ContentType: "application/octet-stream",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteProject(ctx, project.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetBackup(ctx, backup.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("backup remained: %v", err)
+	}
+	if _, err := os.Stat(mustPath(t, st, sum)); !os.IsNotExist(err) {
+		t.Fatalf("blob remained: %v", err)
+	}
+}
+
 func openStore(t *testing.T) *Store {
 	t.Helper()
 	st, err := Open(t.TempDir())

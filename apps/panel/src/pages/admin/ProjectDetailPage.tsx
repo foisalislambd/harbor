@@ -101,7 +101,9 @@ export default function ProjectDetailPage() {
             className={dangerButtonClass}
             onClick={() => {
               if (!confirm(`Delete ${project.name} and every backup in it?`)) return;
-              void api(`/api/v1/projects/${project.id}`, { method: "DELETE" }).then(() => navigate("/projects"));
+              void api(`/api/v1/projects/${project.id}`, { method: "DELETE" })
+                .then(() => navigate("/projects"))
+                .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not delete project"));
             }}
           >
             Delete project
@@ -110,6 +112,11 @@ export default function ProjectDetailPage() {
       />
       {error && <p className="text-sm text-error-500">{error}</p>}
       <p className="text-sm text-gray-500">Slug {project.slug} · {quotaLabel} · {project.backup_count} backups</p>
+      {project.quota_bytes > 0 && project.used_bytes > project.quota_bytes && (
+        <p className="text-sm text-orange-700 dark:text-orange-300">
+          This project is over its quota. New uploads are rejected until you raise the quota or delete backups.
+        </p>
+      )}
 
       <form onSubmit={save} className="admin-card">
         <div className="admin-card-body grid gap-4 md:grid-cols-2">
@@ -137,8 +144,15 @@ export default function ProjectDetailPage() {
             <input className={fieldClass} type="number" min={0} value={project.retention_days} onChange={(e) => setProject({ ...project, retention_days: Number(e.target.value) })} />
           </label>
           <label className="block">
-            <span className={labelClass}>Quota bytes</span>
-            <input className={fieldClass} type="number" min={0} value={project.quota_bytes} onChange={(e) => setProject({ ...project, quota_bytes: Number(e.target.value) })} />
+            <span className={labelClass}>Quota GB</span>
+            <input
+              className={fieldClass}
+              type="number"
+              min={0}
+              step="0.1"
+              value={Math.round((project.quota_bytes / 1024 ** 3) * 1000) / 1000}
+              onChange={(e) => setProject({ ...project, quota_bytes: Math.round(Number(e.target.value) * 1024 ** 3) })}
+            />
           </label>
           <div className="flex items-end">
             <button className={primaryButtonClass} type="submit">Save project</button>
@@ -170,7 +184,7 @@ export default function ProjectDetailPage() {
                   type="button"
                   className={dangerButtonClass}
                   onClick={() => {
-                    void api(`/api/v1/projects/${projectId}/keys/${key.id}`, { method: "DELETE" }).then(load);
+                    void api(`/api/v1/projects/${projectId}/keys/${key.id}`, { method: "DELETE" }).then(load).catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not revoke key"));
                   }}
                 >
                   Revoke
@@ -193,7 +207,7 @@ export default function ProjectDetailPage() {
                 void api(`/api/v1/projects/${projectId}/schedules`, {
                   method: "POST",
                   body: JSON.stringify({ name: scheduleName, interval_hours: Number(intervalHours) }),
-                }).then(load);
+                }).then(load).catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not add schedule"));
               }}
             >
               <input className={fieldClass} value={scheduleName} onChange={(e) => setScheduleName(e.target.value)} required />
@@ -206,7 +220,7 @@ export default function ProjectDetailPage() {
                   <span>
                     {schedule.name} · every {schedule.interval_hours}h · {schedule.overdue ? "overdue" : "on time"}
                   </span>
-                  <button type="button" className={dangerButtonClass} onClick={() => void api(`/api/v1/projects/${projectId}/schedules/${schedule.id}`, { method: "DELETE" }).then(load)}>
+                  <button type="button" className={dangerButtonClass} onClick={() => void api(`/api/v1/projects/${projectId}/schedules/${schedule.id}`, { method: "DELETE" }).then(load).catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not remove schedule"))}>
                     Remove
                   </button>
                 </li>
@@ -228,7 +242,7 @@ export default function ProjectDetailPage() {
                 }).then(() => {
                   setHookUrl("");
                   return load();
-                });
+                }).catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not add webhook"));
               }}
             >
               <input className={fieldClass} placeholder="https://example.com/hooks/harbor" value={hookUrl} onChange={(e) => setHookUrl(e.target.value)} required />
@@ -239,7 +253,7 @@ export default function ProjectDetailPage() {
                 <li key={hook.id} className="space-y-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate">{hook.url}</span>
-                    <button type="button" className={dangerButtonClass} onClick={() => void api(`/api/v1/projects/${projectId}/webhooks/${hook.id}`, { method: "DELETE" }).then(load)}>
+                    <button type="button" className={dangerButtonClass} onClick={() => void api(`/api/v1/projects/${projectId}/webhooks/${hook.id}`, { method: "DELETE" }).then(load).catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not remove webhook"))}>
                       Remove
                     </button>
                   </div>

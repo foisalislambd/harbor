@@ -10,6 +10,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -147,11 +148,15 @@ func (a *API) spa(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	info, err := os.Stat(target)
-	if err != nil || info.IsDir() {
-		http.ServeFile(w, r, filepath.Join(a.cfg.PanelDir, "index.html"))
+	if err == nil && !info.IsDir() {
+		http.ServeFile(w, r, target)
 		return
 	}
-	http.ServeFile(w, r, target)
+	if strings.Contains(path.Base(rel), ".") {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, filepath.Join(a.cfg.PanelDir, "index.html"))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -467,16 +472,36 @@ func (a *API) listProjects(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) createProject(w http.ResponseWriter, r *http.Request) {
-	var body projectBody
+	var body struct {
+		Name           string `json:"name"`
+		Description    string `json:"description"`
+		RetentionCount *int   `json:"retention_count"`
+		RetentionDays  *int   `json:"retention_days"`
+		QuotaBytes     *int64 `json:"quota_bytes"`
+	}
 	if err := decode(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if err := validateProject(body, false); err != nil {
+	count, days := 14, 30
+	var quota int64
+	if body.RetentionCount != nil {
+		count = *body.RetentionCount
+	}
+	if body.RetentionDays != nil {
+		days = *body.RetentionDays
+	}
+	if body.QuotaBytes != nil {
+		quota = *body.QuotaBytes
+	}
+	if err := validateProject(projectBody{
+		Name: body.Name, Description: body.Description,
+		RetentionCount: count, RetentionDays: days, QuotaBytes: quota,
+	}, false); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	p, err := a.store.CreateProject(r.Context(), body.Name, body.Description, body.RetentionCount, body.RetentionDays, body.QuotaBytes)
+	p, err := a.store.CreateProject(r.Context(), body.Name, body.Description, count, days, quota)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not create project")
 		return
@@ -588,7 +613,7 @@ func (a *API) createKey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if strings.TrimSpace(body.Name) == "" {
+	if name := strings.TrimSpace(body.Name); name == "" || len(name) > 80 {
 		writeError(w, http.StatusBadRequest, "key name is required")
 		return
 	}
@@ -655,8 +680,8 @@ func (a *API) createWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if !strings.HasPrefix(body.URL, "https://") && !strings.HasPrefix(body.URL, "http://") {
-		writeError(w, http.StatusBadRequest, "webhook url must start with http:// or https://")
+	if err := validWebhookURL(body.URL); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	events := strings.TrimSpace(body.Events)
@@ -718,7 +743,7 @@ func (a *API) createSchedule(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	if strings.TrimSpace(body.Name) == "" {
+	if name := strings.TrimSpace(body.Name); name == "" || len(name) > 80 {
 		writeError(w, http.StatusBadRequest, "schedule name is required")
 		return
 	}
@@ -951,6 +976,10 @@ func (a *API) ingest(w http.ResponseWriter, r *http.Request, projectID string) {
 		a.emit(r, project.ID, "backup.deleted", old)
 	}
 	fresh, err := a.store.GetBackup(r.Context(), backup.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusConflict, "backup was discarded by the retention policy")
+		return
+	}
 	if err == nil {
 		backup = fresh
 	}
@@ -994,6 +1023,7 @@ func (a *API) downloadBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 	w.Header().Set("Content-Type", b.ContentType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": b.Filename}))
 	w.Header().Set("X-Checksum-Sha256", b.Checksum)
 	http.ServeContent(w, r, b.Filename, time.Time{}, f)
@@ -1137,6 +1167,9 @@ func validateAccount(name, email, password string) error {
 	if len(password) < 8 {
 		return errors.New("password must be at least 8 characters")
 	}
+	if len(password) > 72 {
+		return errors.New("password must be at most 72 bytes")
+	}
 	return nil
 }
 
@@ -1179,6 +1212,18 @@ func hasScope(scopes, want string) bool {
 	return false
 }
 
+func validWebhookURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if len(raw) > 500 {
+		return errors.New("webhook url is too long")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return errors.New("webhook url must be an http or https URL")
+	}
+	return nil
+}
+
 func validEvents(events string) bool {
 	allowed := map[string]bool{"backup.created": true, "backup.deleted": true}
 	seen := map[string]bool{}
@@ -1217,6 +1262,9 @@ func cleanFilename(name string) string {
 	out := b.String()
 	if len(out) > 180 {
 		out = out[:180]
+		for len(out) > 0 && out[len(out)-1]&0xC0 == 0x80 {
+			out = out[:len(out)-1]
+		}
 	}
 	if strings.Trim(out, "._ ") == "" {
 		return "backup.bin"
