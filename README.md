@@ -8,13 +8,16 @@ The panel lives at `/`. The API lives at `/api/v1`.
 
 [VERSION.md](VERSION.md) is the release version. A push to `main` publishes that version when it is higher than every existing GitHub release. The same number, or a lower one, does nothing.
 
-Replace `OWNER` with the GitHub user or organization, and `REPO` with the repository name. The container is `ghcr.io/OWNER/harbor`.
+Replace `OWNER` with the GitHub user or organization, and `REPO` with the repository name. The same image is published to `ghcr.io/OWNER/harbor` and to Docker Hub as `DOCKERHUB_USERNAME/harbor`.
 
 ### Docker
 
 ```bash
 docker pull ghcr.io/OWNER/harbor:0.1.0
 docker run -d --name harbor -p 8787:8787 -v harbor-data:/data ghcr.io/OWNER/harbor:0.1.0
+
+# or Docker Hub
+docker pull DOCKERHUB_USERNAME/harbor:0.1.0
 ```
 
 Open http://127.0.0.1:8787. The first visit creates the owner account. Data stays in the `harbor-data` volume.
@@ -153,4 +156,4 @@ Panel users sign in with a session cookie and manage every project from `/`.
 - [SECURITY.md](SECURITY.md) — how to report a vulnerability
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - [CHANGELOG.md](CHANGELOG.md)
-- [VERSION.md](VERSION.md) — number published to GitHub releases and GHCR
+- [VERSION.md](VERSION.md) — number published to GitHub releases, GHCR, and Docker Hub

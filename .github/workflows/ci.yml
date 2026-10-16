@@ -73,10 +73,20 @@ jobs:
           EOF
           cd dist
           sha256sum * > SHA256SUMS
-      - name: Image name
+      - name: Image names
         if: steps.version.outputs.publish == 'true'
         id: image
-        run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/harbor" >> "$GITHUB_OUTPUT"
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ]; then
+            echo "Set the DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repository secrets." >&2
+            exit 1
+          fi
+          owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          hub=$(echo "$DOCKERHUB_USERNAME" | tr '[:upper:]' '[:lower:]')
+          echo "name=ghcr.io/${owner}/harbor" >> "$GITHUB_OUTPUT"
+          echo "dockerhub=${hub}/harbor" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-qemu-action@v4
         if: steps.version.outputs.publish == 'true'
       - uses: docker/setup-buildx-action@v4
@@ -87,6 +97,11 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/login-action@v4
+        if: steps.version.outputs.publish == 'true'
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       - uses: docker/build-push-action@v7
         if: steps.version.outputs.publish == 'true'
         with:
@@ -97,6 +112,8 @@ jobs:
           tags: |
             ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
             ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.dockerhub }}:${{ steps.version.outputs.version }}
+            ${{ steps.image.outputs.dockerhub }}:latest
       - name: Release notes
         if: steps.version.outputs.publish == 'true'
         run: python .github/scripts/release_notes.py
