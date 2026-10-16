@@ -11,3 +11,6 @@ export const quietButtonClass =
 
 export const dangerButtonClass =
   "inline-flex h-9 items-center justify-center rounded-lg px-3 text-sm font-medium text-error-500 hover:bg-error-50 dark:hover:bg-error-500/10";
+
+export const solidDangerButtonClass =
+  "inline-flex h-10 items-center justify-center rounded-lg bg-error-500 px-4 text-sm font-semibold text-white shadow-sm hover:bg-error-600";

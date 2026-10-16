@@ -1,6 +1,6 @@
 import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
-import { dangerButtonClass, fieldClass, labelClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
+import { dangerButtonClass, fieldClass, labelClass, primaryButtonClass, quietButtonClass, solidDangerButtonClass } from "@/lib/fields";
 import {
   api,
   formatBytes,
@@ -98,7 +98,7 @@ export default function ProjectDetailPage() {
         actions={
           <button
             type="button"
-            className={dangerButtonClass}
+            className={solidDangerButtonClass}
             onClick={() => {
               if (!confirm(`Delete ${project.name} and every backup in it?`)) return;
               void api(`/api/v1/projects/${project.id}`, { method: "DELETE" })

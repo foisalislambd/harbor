@@ -92,7 +92,18 @@ export default function BackupsPage() {
             <option value="files">Files</option>
             <option value="other">Other</option>
           </select>
-          <input key={fileKey} className={fieldClass} type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} required />
+          <label className={`${fieldClass} relative flex cursor-pointer items-center focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-500/20`}>
+            <input
+              key={fileKey}
+              className="absolute inset-0 cursor-pointer opacity-0"
+              type="file"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              required
+            />
+            <span className={`block truncate ${file ? "text-gray-900 dark:text-white" : "text-gray-400"}`}>
+              {file ? file.name : "Choose a file"}
+            </span>
+          </label>
           <button className={primaryButtonClass} disabled={uploading} type="submit">{uploading ? "Uploading…" : "Upload"}</button>
         </div>
       </form>

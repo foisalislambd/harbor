@@ -35,6 +35,7 @@
   --color-success-600: #039855;
   --color-error-50: #fef3f2;
   --color-error-500: #f04438;
+  --color-error-600: #d92d20;
 }
 
 @layer base {

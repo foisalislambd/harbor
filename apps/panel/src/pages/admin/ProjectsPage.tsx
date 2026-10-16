@@ -62,9 +62,6 @@ export default function ProjectsPage() {
   return (
     <div className="admin-content space-y-6">
       <AdminPageHeader title="Projects" actions={<AdminAddButton label="New project" onClick={() => setOpen(true)} />} />
-      <p className="text-sm text-gray-500 dark:text-gray-400">
-        Each project is one application. Give it an API key, then that app can push archives, database dumps, or files into this vault.
-      </p>
       {error && <p className="text-sm text-error-500">{error}</p>}
       {projects && projects.length === 0 ? (
         <div className="admin-card">
