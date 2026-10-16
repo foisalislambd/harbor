@@ -31,3 +31,86 @@ jobs:
       - name: Install and typecheck
         working-directory: apps/panel
         run: npm ci && npx tsc -b --pretty false
+
+  release:
+    name: Release and Docker image
+    needs: [server, panel]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .github/scripts/should_release.py
+      - name: Check the server version matches VERSION.md
+        if: steps.version.outputs.publish == 'true'
+        run: grep -q "var Version = \"${{ steps.version.outputs.version }}\"" apps/server/internal/config/config.go
+      - uses: actions/setup-go@v6
+        if: steps.version.outputs.publish == 'true'
+        with:
+          go-version-file: apps/server/go.mod
+      - name: Build release binaries
+        if: steps.version.outputs.publish == 'true'
+        working-directory: apps/server
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist
+          while read -r goos goarch name; do
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build \
+              -ldflags "-s -w -X harbor/internal/config.Version=${VERSION}" \
+              -o "dist/${name}" ./cmd/harbor
+          done <<'EOF'
+          linux amd64 harbor-linux-amd64
+          linux arm64 harbor-linux-arm64
+          darwin amd64 harbor-darwin-amd64
+          darwin arm64 harbor-darwin-arm64
+          windows amd64 harbor-windows-amd64.exe
+          EOF
+          cd dist
+          sha256sum * > SHA256SUMS
+      - name: Image name
+        if: steps.version.outputs.publish == 'true'
+        id: image
+        run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/harbor" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+        if: steps.version.outputs.publish == 'true'
+      - uses: docker/setup-buildx-action@v3
+        if: steps.version.outputs.publish == 'true'
+      - uses: docker/login-action@v3
+        if: steps.version.outputs.publish == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        if: steps.version.outputs.publish == 'true'
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ steps.version.outputs.version }}
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}
+            ${{ steps.image.outputs.name }}:latest
+      - name: Release notes
+        if: steps.version.outputs.publish == 'true'
+        run: python .github/scripts/release_notes.py
+      - name: Create GitHub release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release create "v${VERSION}" --title "v${VERSION}" --notes-file release-notes.md apps/server/dist/*
+      - name: Mark the container package public
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method PUT -H "Accept: application/vnd.github+json" /user/packages/container/harbor -f visibility=public \
+            || gh api --method PUT -H "Accept: application/vnd.github+json" "/orgs/${{ github.repository_owner }}/packages/container/harbor" -f visibility=public \
+            || echo "Package pushed. Set it to public in GitHub Packages if this step could not."

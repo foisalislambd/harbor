@@ -7,7 +7,8 @@ import (
 	"time"
 )
 
-const Version = "0.1.0"
+// Version is the release in VERSION.md. Release builds override it with -ldflags.
+var Version = "0.1.0"
 
 type Config struct {
 	Addr         string

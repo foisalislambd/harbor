@@ -6,11 +6,12 @@ COPY apps/panel/ ./
 RUN npm run build
 
 FROM golang:1.26-alpine AS server
+ARG VERSION=0.1.0
 WORKDIR /src
 COPY apps/server/go.mod apps/server/go.sum ./
 RUN go mod download
 COPY apps/server/ ./
-RUN CGO_ENABLED=0 go build -o /harbor ./cmd/harbor
+RUN CGO_ENABLED=0 go build -ldflags "-s -w -X harbor/internal/config.Version=${VERSION}" -o /harbor ./cmd/harbor
 
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates

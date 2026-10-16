@@ -34,6 +34,10 @@ The panel is at http://127.0.0.1:5173 and proxies `/api` to port 8787. The first
 - Do not commit `data/`, `*.db`, `node_modules`, `dist`, or built binaries.
 - A new API behavior needs a test in `apps/server`. A panel type change must pass `tsc`.
 
+## Releases
+
+The version line in `VERSION.md` is `major.minor.patch`. Set the same value on `Version` in `apps/server/internal/config/config.go`, and add a matching section to `CHANGELOG.md`. Pushing that higher number to `main` builds binaries, pushes `ghcr.io/<owner>/harbor:<version>` (and `:latest`), and opens a GitHub release. An equal or lower number is skipped.
+
 ## Pull requests
 
 Describe the behavior you changed and how you checked it. Keep the change focused on one thing. The CI workflow runs `go test ./...` and the panel typecheck.
