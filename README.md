@@ -91,3 +91,11 @@ Panel users sign in with a session cookie and manage every project from `/`.
 | `HARBOR_COOKIE_SECURE` | empty | Set to `1` behind HTTPS |
 | `HARBOR_CORS_ORIGIN` | empty | Exact origin if the panel is on another host |
 | `HARBOR_TOKEN` | empty | Default token for `harbor push` |
+
+## Project files
+
+- [LICENSE](LICENSE) — MIT
+- [CONTRIBUTING.md](CONTRIBUTING.md) — build, test, and pull requests
+- [SECURITY.md](SECURITY.md) — how to report a vulnerability
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- [CHANGELOG.md](CHANGELOG.md)

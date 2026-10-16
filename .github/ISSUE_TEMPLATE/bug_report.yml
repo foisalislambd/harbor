@@ -1,0 +1,36 @@
+name: Bug report
+description: Something in Harbor does not behave as documented
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Harbor did instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Harbor version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where it runs
+      options:
+        - Local PC
+        - VPS
+        - Docker
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Server log lines or API error text. Remove API keys and file contents.
+    validations:
+      required: false
