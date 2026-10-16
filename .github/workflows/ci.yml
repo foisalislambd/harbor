@@ -53,6 +53,21 @@ jobs:
         if: steps.version.outputs.publish == 'true'
         with:
           go-version-file: apps/server/go.mod
+      - uses: actions/setup-node@v7
+        if: steps.version.outputs.publish == 'true'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/panel/package-lock.json
+      - name: Build the panel into the release binaries
+        if: steps.version.outputs.publish == 'true'
+        working-directory: apps/panel
+        run: |
+          npm ci
+          npm run build
+          rm -rf ../server/internal/panel/dist
+          mkdir -p ../server/internal/panel/dist
+          cp -a dist/. ../server/internal/panel/dist/
       - name: Build release binaries
         if: steps.version.outputs.publish == 'true'
         working-directory: apps/server
@@ -60,16 +75,21 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p dist
-          while read -r goos goarch name; do
+          while read -r goos goarch name extra; do
+            goos=${goos//$'\r'/}
+            goarch=${goarch//$'\r'/}
+            name=${name//$'\r'/}
+            extra=${extra//$'\r'/}
+            [ -z "$goos" ] && continue
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build \
-              -ldflags "-s -w -X harbor/internal/config.Version=${VERSION}" \
+              -ldflags "-s -w -X harbor/internal/config.Version=${VERSION} ${extra}" \
               -o "dist/${name}" ./cmd/harbor
           done <<'EOF'
           linux amd64 harbor-linux-amd64
           linux arm64 harbor-linux-arm64
           darwin amd64 harbor-darwin-amd64
           darwin arm64 harbor-darwin-arm64
-          windows amd64 harbor-windows-amd64.exe
+          windows amd64 harbor-windows-amd64.exe -H=windowsgui
           EOF
           cd dist
           sha256sum * > SHA256SUMS

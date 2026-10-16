@@ -11,15 +11,14 @@ WORKDIR /src
 COPY apps/server/go.mod apps/server/go.sum ./
 RUN go mod download
 COPY apps/server/ ./
+COPY --from=panel /src/dist ./internal/panel/dist
 RUN CGO_ENABLED=0 go build -ldflags "-s -w -X harbor/internal/config.Version=${VERSION}" -o /harbor ./cmd/harbor
 
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates
 COPY --from=server /harbor /usr/local/bin/harbor
-COPY --from=panel /src/dist /panel
 ENV HARBOR_ADDR=:8787
 ENV HARBOR_DATA_DIR=/data
-ENV HARBOR_PANEL_DIR=/panel
 VOLUME /data
 EXPOSE 8787
-ENTRYPOINT ["harbor"]
+ENTRYPOINT ["harbor", "serve"]

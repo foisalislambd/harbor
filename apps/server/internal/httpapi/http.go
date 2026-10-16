@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"log"
 	"mime"
 	"net/http"
@@ -19,6 +21,7 @@ import (
 	"time"
 
 	"harbor/internal/config"
+	"harbor/internal/panel"
 	"harbor/internal/store"
 	"harbor/internal/webhook"
 
@@ -109,10 +112,19 @@ func (a *API) Handler() http.Handler {
 		})
 	})
 
-	if a.cfg.PanelDir != "" {
-		r.NotFound(a.spa)
+	if panelFS, ok := a.panelFS(); ok {
+		r.NotFound(a.spa(panelFS))
 	}
 	return r
+}
+
+func (a *API) panelFS() (fs.FS, bool) {
+	if a.cfg.PanelDir != "" {
+		if _, err := os.Stat(filepath.Join(a.cfg.PanelDir, "index.html")); err == nil {
+			return os.DirFS(a.cfg.PanelDir), true
+		}
+	}
+	return panel.Bundled()
 }
 
 func (a *API) cors(next http.Handler) http.Handler {
@@ -130,33 +142,52 @@ func (a *API) cors(next http.Handler) http.Handler {
 	})
 }
 
-func (a *API) spa(w http.ResponseWriter, r *http.Request) {
-	if strings.HasPrefix(r.URL.Path, "/api/") {
-		writeError(w, http.StatusNotFound, "not found")
-		return
+func (a *API) spa(panelFS fs.FS) http.HandlerFunc {
+	files := http.FileServer(http.FS(panelFS))
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		rel := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+		if rel == "" || rel == "." {
+			writePanelIndex(w, r, panelFS)
+			return
+		}
+		if !fs.ValidPath(rel) {
+			http.NotFound(w, r)
+			return
+		}
+		f, err := panelFS.Open(rel)
+		if err == nil {
+			info, statErr := f.Stat()
+			f.Close()
+			if statErr == nil && !info.IsDir() {
+				files.ServeHTTP(w, r)
+				return
+			}
+		}
+		if strings.Contains(path.Base(rel), ".") {
+			http.NotFound(w, r)
+			return
+		}
+		writePanelIndex(w, r, panelFS)
 	}
-	urlPath := path.Clean("/" + r.URL.Path)
-	rel := strings.TrimPrefix(urlPath, "/")
-	if rel == "" || rel == "." || strings.HasPrefix(rel, "../") || strings.Contains(rel, "/../") {
-		http.ServeFile(w, r, filepath.Join(a.cfg.PanelDir, "index.html"))
-		return
-	}
-	target := filepath.Join(a.cfg.PanelDir, filepath.FromSlash(rel))
-	rooted, err := filepath.Rel(a.cfg.PanelDir, target)
-	if err != nil || rooted == ".." || strings.HasPrefix(rooted, ".."+string(filepath.Separator)) {
-		http.ServeFile(w, r, filepath.Join(a.cfg.PanelDir, "index.html"))
-		return
-	}
-	info, err := os.Stat(target)
-	if err == nil && !info.IsDir() {
-		http.ServeFile(w, r, target)
-		return
-	}
-	if strings.Contains(path.Base(rel), ".") {
+}
+
+func writePanelIndex(w http.ResponseWriter, r *http.Request, panelFS fs.FS) {
+	body, err := fs.ReadFile(panelFS, "index.html")
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	http.ServeFile(w, r, filepath.Join(a.cfg.PanelDir, "index.html"))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(body))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -7,6 +7,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -236,5 +238,40 @@ func TestReadOnlyKeyCannotPush(t *testing.T) {
 	handler.ServeHTTP(res, req)
 	if res.Code != http.StatusForbidden {
 		t.Fatalf("expected forbidden, got %d %s", res.Code, res.Body.String())
+	}
+}
+
+func TestPanelSPA(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html><title>Harbor</title>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "app.js"), []byte("console.log(1)"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	handler := New(config.Config{DataDir: dir, PanelDir: dir, MaxUpload: 1024, SessionTTL: time.Hour}, st).Handler()
+
+	index := httptest.NewRecorder()
+	handler.ServeHTTP(index, httptest.NewRequest(http.MethodGet, "/projects/abc", nil))
+	if index.Code != http.StatusOK || !bytes.Contains(index.Body.Bytes(), []byte("<title>Harbor</title>")) {
+		t.Fatalf("spa %d %s", index.Code, index.Body.String())
+	}
+	asset := httptest.NewRecorder()
+	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/assets/app.js", nil))
+	if asset.Code != http.StatusOK || !bytes.Contains(asset.Body.Bytes(), []byte("console.log")) {
+		t.Fatalf("asset %d %s", asset.Code, asset.Body.String())
+	}
+	missing := httptest.NewRecorder()
+	handler.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/assets/missing.js", nil))
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing asset %d", missing.Code)
 	}
 }

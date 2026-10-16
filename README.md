@@ -40,31 +40,40 @@ volumes:
 docker compose up -d
 ```
 
-### Release binary
+### Desktop app
 
-Linux (amd64):
+The release binary includes the same panel. Run it and a window opens on this computer. The first visit creates the owner account. Backups stay in the user data folder, and the API listens only on `127.0.0.1:8787`.
+
+Windows: download [harbor-windows-amd64.exe](https://github.com/foisalislambd/harbor/releases/download/v0.1.0/harbor-windows-amd64.exe) and open it. Data is in `%AppData%\Harbor`.
+
+Linux:
 
 ```bash
 curl -fsSL -o harbor "https://github.com/foisalislambd/harbor/releases/download/v0.1.0/harbor-linux-amd64"
 curl -fsSL -o SHA256SUMS "https://github.com/foisalislambd/harbor/releases/download/v0.1.0/SHA256SUMS"
 grep harbor-linux-amd64 SHA256SUMS | sha256sum -c -
 chmod +x harbor
-./harbor serve -addr :8787 -data data
+./harbor
 ```
 
-Windows (PowerShell):
+Data is in `~/.local/share/harbor` (or `$XDG_DATA_HOME/harbor`). Close the window to stop Harbor.
 
-```powershell
-Invoke-WebRequest "https://github.com/foisalislambd/harbor/releases/download/v0.1.0/harbor-windows-amd64.exe" -OutFile harbor.exe
-.\harbor.exe serve -addr :8787 -data data
+macOS: download `harbor-darwin-arm64` or `harbor-darwin-amd64` from the [release](https://github.com/foisalislambd/harbor/releases/tag/v0.1.0), `chmod +x` it, and run it. Data is in `~/Library/Application Support/Harbor`.
+
+Other archives on the release: `harbor-linux-arm64`. The same binary also sends backups:
+
+```bash
+harbor push -file backup.tar.gz -token hb_your_project_key -name nightly -kind archive -source my-app
 ```
 
-The Docker image serves the panel and the API on port 8787. The release binary serves the API and the `harbor push` command. Other archives on the release: `harbor-linux-arm64`, `harbor-darwin-amd64`, `harbor-darwin-arm64`.
+`harbor serve` runs the panel and API without a window. Use that on a VPS. `harbor` and `harbor desktop` open the window.
+
+The Docker image serves the panel and the API on port 8787 and does not open a window.
 
 ## Layout
 
 ```
-apps/server   Go API, blob store, and `harbor` CLI
+apps/server   Go API, blob store, desktop window, and `harbor` CLI
 apps/panel    React panel (ZenPanel shell, routes at /)
 ```
 
@@ -156,4 +165,4 @@ Panel users sign in with a session cookie and manage every project from `/`.
 - [SECURITY.md](SECURITY.md) — how to report a vulnerability
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - [CHANGELOG.md](CHANGELOG.md)
-- [VERSION.md](VERSION.md) — number published to GitHub releases, GHCR, and Docker Hub
+- [VERSION.md](VERSION.md) — number published to GitHub releases, GHCR, and Docker Hub. Release binaries include the desktop panel.

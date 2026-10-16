@@ -4,6 +4,8 @@ data/
 *.db-shm
 apps/panel/node_modules/
 apps/panel/dist/
+apps/server/internal/panel/dist/**
+!apps/server/internal/panel/dist/index.html
 apps/server/harbor
 apps/server/harbor.exe
 .DS_Store

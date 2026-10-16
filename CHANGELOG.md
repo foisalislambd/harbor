@@ -11,3 +11,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - One Go server with SQLite metadata and content-addressed backup files.
 - Projects, API keys, retention, quotas, schedules, webhooks, and an audit log.
 - A panel at `/` for the vault, plus `harbor push` and a Docker image.
+- Desktop mode in the release binaries. `harbor` opens the same panel in a window on Windows, Linux, and macOS.
