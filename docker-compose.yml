@@ -1,7 +1,8 @@
 services:
   harbor:
     # Local build. To run a published release instead, set image to
-    # ghcr.io/OWNER/harbor:<version from VERSION.md> and remove build.
+    # ghcr.io/foisalislambd/harbor:<version from VERSION.md> or
+    # foisalislambd/harbor:<version from VERSION.md> and remove build.
     build: .
     ports:
       - "8787:8787"
