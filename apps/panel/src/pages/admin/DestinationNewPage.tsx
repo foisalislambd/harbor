@@ -69,7 +69,7 @@ export default function DestinationNewPage() {
       <AdminPageHeader
         compact
         title={provider?.name || "Service"}
-        actions={<Link to="/destinations" className={`${quietButtonClass} h-8 px-3 text-xs`}>All services</Link>}
+        actions={<Link to="/destinations" className="inline-flex h-8 items-center justify-center rounded-lg border border-gray-200 px-3 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/5">Back</Link>}
       />
       {missing && <p className="text-sm text-error-500">That storage service is not available.</p>}
       {error && <p className="text-sm text-error-500">{error}</p>}
