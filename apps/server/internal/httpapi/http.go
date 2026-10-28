@@ -100,6 +100,7 @@ func (a *API) Handler() http.Handler {
 			r.Get("/projects/{projectID}/schedules", a.listSchedules)
 			r.Post("/projects/{projectID}/schedules", a.createSchedule)
 			r.Delete("/projects/{projectID}/schedules/{scheduleID}", a.deleteSchedule)
+			r.Get("/destination-providers", a.listProviders)
 			r.Get("/destinations", a.listDestinations)
 			r.Post("/destinations", a.createDestination)
 			r.Delete("/destinations/{destinationID}", a.deleteDestination)

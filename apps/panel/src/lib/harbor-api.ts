@@ -60,14 +60,39 @@ export type BackupCopy = {
   error?: string;
 };
 
+export type StorageProvider = {
+  id: string;
+  name: string;
+  group: string;
+  summary: string;
+  steps: string[];
+  free_bytes: number;
+  free_note: string;
+  account_id: boolean;
+  jurisdiction: boolean;
+  region: boolean;
+  region_placeholder: string;
+  endpoint: boolean;
+  endpoint_placeholder: string;
+  allow_http: boolean;
+};
+
+export type StorageProviderList = {
+  items: StorageProvider[];
+};
+
 export type Destination = {
   id: string;
   name: string;
   provider: string;
+  provider_name: string;
   account_id: string;
   access_key_id: string;
   bucket: string;
   jurisdiction: string;
+  region: string;
+  endpoint: string;
+  allow_over_free: boolean;
   key_prefix: string;
   used_bytes: number;
   account_used_bytes: number;
@@ -78,9 +103,6 @@ export type Destination = {
 
 export type DestinationList = {
   items: Destination[];
-  free_storage_bytes: number;
-  free_class_a: number;
-  free_class_b: number;
 };
 
 export type ReplicateResult = {

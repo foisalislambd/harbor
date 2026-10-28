@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -43,13 +44,16 @@ type completedPart struct {
 }
 
 type Client struct {
-	Endpoint  string
-	Bucket    string
-	AccessKey string
-	Secret    string
-	Region    string
-	HTTP      *http.Client
-	Now       func() time.Time
+	Endpoint     string
+	Bucket       string
+	AccessKey    string
+	Secret       string
+	Region       string
+	StorageClass string
+	Versioned    bool
+	VirtualHost  bool
+	HTTP         *http.Client
+	Now          func() time.Time
 }
 
 type apiError struct {
@@ -65,7 +69,7 @@ func (e *apiError) Error() string {
 	if e.Code != "" {
 		return e.Code
 	}
-	return fmt.Sprintf("Cloudflare R2 returned HTTP %d", e.Status)
+	return fmt.Sprintf("storage service returned HTTP %d", e.Status)
 }
 
 type xmlError struct {
@@ -103,11 +107,12 @@ func FromDestination(d store.Destination) (*Client, error) {
 		return nil, err
 	}
 	return &Client{
-		Endpoint:  endpoint,
-		Bucket:    d.Bucket,
-		AccessKey: d.AccessKeyID,
-		Secret:    d.Secret,
-		Region:    "auto",
+		Endpoint:     endpoint,
+		Bucket:       d.Bucket,
+		AccessKey:    d.AccessKeyID,
+		Secret:       d.Secret,
+		Region:       "auto",
+		StorageClass: "STANDARD",
 	}, nil
 }
 
@@ -155,10 +160,10 @@ func (c *Client) Check(ctx context.Context) error {
 	if err != nil {
 		var api *apiError
 		if errors.As(err, &api) && (api.Status == http.StatusNotFound || api.Code == "NoSuchBucket") {
-			return errors.New("Cloudflare R2 does not have that bucket in this jurisdiction")
+			return errors.New("that bucket was not found in this location")
 		}
 		if errors.As(err, &api) && (api.Status == http.StatusForbidden || api.Status == http.StatusUnauthorized) {
-			return errors.New("Cloudflare R2 refused this access key for that bucket")
+			return errors.New("this access key cannot read that bucket")
 		}
 		return err
 	}
@@ -176,7 +181,7 @@ func (c *Client) PutFile(ctx context.Context, key, path, contentType, sha string
 			return err
 		}
 		defer f.Close()
-		resp, err := c.do(ctx, http.MethodPut, key, nil, f, size, sha, contentType, true)
+		resp, err := c.do(ctx, http.MethodPut, key, nil, f, size, sha, contentType, c.StorageClass != "")
 		if err != nil {
 			return err
 		}
@@ -238,7 +243,7 @@ func (c *Client) putMultipart(ctx context.Context, key, path, contentType string
 func (c *Client) createMultipart(ctx context.Context, key, contentType string) (string, error) {
 	query := url.Values{}
 	query.Set("uploads", "")
-	resp, err := c.do(ctx, http.MethodPost, key, query, bytes.NewReader(nil), 0, emptyHash, contentType, true)
+	resp, err := c.do(ctx, http.MethodPost, key, query, bytes.NewReader(nil), 0, emptyHash, contentType, c.StorageClass != "")
 	if err != nil {
 		return "", err
 	}
@@ -246,11 +251,11 @@ func (c *Client) createMultipart(ctx context.Context, key, contentType string) (
 	var result struct {
 		UploadID string `xml:"UploadId"`
 	}
-	if err := xml.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+	if err := decodeXML(resp.Body, &result); err != nil {
 		return "", err
 	}
 	if result.UploadID == "" {
-		return "", errors.New("Cloudflare R2 did not return an upload id")
+		return "", errors.New("the storage service did not return an upload id")
 	}
 	return result.UploadID, nil
 }
@@ -266,7 +271,7 @@ func (c *Client) uploadPart(ctx context.Context, key, uploadID string, number in
 	resp.Body.Close()
 	etag := resp.Header.Get("ETag")
 	if etag == "" {
-		return "", errors.New("Cloudflare R2 did not return a part checksum")
+		return "", errors.New("the storage service did not return a part checksum")
 	}
 	return etag, nil
 }
@@ -305,18 +310,97 @@ func (c *Client) abort(key, uploadID string) {
 	resp.Body.Close()
 }
 
-// Delete removes one object. A missing object is success.
+// Delete removes one object. A missing object is success. Versioned buckets,
+// such as Backblaze B2, keep older copies until every version is removed.
 func (c *Client) Delete(ctx context.Context, key string) error {
-	resp, err := c.doRaw(ctx, http.MethodDelete, key, nil, nil, 0, emptyHash, "", false)
+	if c.Versioned {
+		if err := c.deleteVersions(ctx, key); err != nil {
+			var api *apiError
+			if errors.As(err, &api) && (api.Status == http.StatusNotImplemented || api.Code == "NotImplemented") {
+				return c.deleteObject(ctx, key, "")
+			}
+			return err
+		}
+		return nil
+	}
+	return c.deleteObject(ctx, key, "")
+}
+
+func (c *Client) deleteObject(ctx context.Context, key, versionID string) error {
+	var query url.Values
+	if versionID != "" {
+		query = url.Values{}
+		query.Set("versionId", versionID)
+	}
+	resp, err := c.doRaw(ctx, http.MethodDelete, key, query, nil, 0, emptyHash, "", false)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusOK {
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil
 	}
 	return readAPIError(resp)
+}
+
+func (c *Client) deleteVersions(ctx context.Context, key string) error {
+	var keyMarker, versionMarker string
+	for page := 0; page < 20; page++ {
+		query := url.Values{}
+		query.Set("versions", "")
+		query.Set("prefix", key)
+		query.Set("max-keys", "1000")
+		if keyMarker != "" {
+			query.Set("key-marker", keyMarker)
+			query.Set("version-id-marker", versionMarker)
+		}
+		resp, err := c.do(ctx, http.MethodGet, "", query, nil, 0, emptyHash, "", false)
+		if err != nil {
+			return err
+		}
+		var listed struct {
+			Truncated         bool   `xml:"IsTruncated"`
+			NextKeyMarker     string `xml:"NextKeyMarker"`
+			NextVersionMarker string `xml:"NextVersionIdMarker"`
+			Versions          []struct {
+				Key       string `xml:"Key"`
+				VersionID string `xml:"VersionId"`
+			} `xml:"Version"`
+			Markers []struct {
+				Key       string `xml:"Key"`
+				VersionID string `xml:"VersionId"`
+			} `xml:"DeleteMarker"`
+		}
+		err = decodeXML(resp.Body, &listed)
+		resp.Body.Close()
+		if err != nil {
+			return err
+		}
+		for _, version := range listed.Versions {
+			if version.Key == key {
+				if err := c.deleteObject(ctx, key, version.VersionID); err != nil {
+					return err
+				}
+			}
+		}
+		for _, marker := range listed.Markers {
+			if marker.Key == key {
+				if err := c.deleteObject(ctx, key, marker.VersionID); err != nil {
+					return err
+				}
+			}
+		}
+		if !listed.Truncated {
+			return nil
+		}
+		if listed.NextKeyMarker == "" {
+			return errors.New("the storage service did not return the next version page")
+		}
+		keyMarker = listed.NextKeyMarker
+		versionMarker = listed.NextVersionMarker
+	}
+	return errors.New("too many stored versions to delete")
 }
 
 // Open downloads an object.
@@ -344,8 +428,7 @@ func (c *Client) doRaw(ctx context.Context, method, key string, query url.Values
 	if payloadHash == "" {
 		payloadHash = emptyHash
 	}
-	endpoint := strings.TrimRight(c.Endpoint, "/")
-	u, err := url.Parse(endpoint + objectPath(c.Bucket, key))
+	u, err := c.target(key)
 	if err != nil {
 		return nil, err
 	}
@@ -361,9 +444,8 @@ func (c *Client) doRaw(ctx context.Context, method, key string, query url.Values
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	if standardClass {
-		// A bucket can default to Infrequent Access, which is outside the free tier.
-		req.Header.Set("x-amz-storage-class", "STANDARD")
+	if standardClass && c.StorageClass != "" {
+		req.Header.Set("x-amz-storage-class", c.StorageClass)
 	}
 	now := c.now().UTC()
 	req.Header.Set("x-amz-date", now.Format("20060102T150405Z"))
@@ -371,6 +453,34 @@ func (c *Client) doRaw(ctx context.Context, method, key string, query url.Values
 	req.Header.Set("Authorization", authorization(req, c.AccessKey, c.Secret, c.region(), "s3", payloadHash, now))
 	req.Header.Set("User-Agent", "harbor")
 	return c.client().Do(req)
+}
+
+func (c *Client) target(key string) (*url.URL, error) {
+	endpoint := strings.TrimRight(c.Endpoint, "/")
+	if !c.VirtualHost {
+		return url.Parse(endpoint + objectPath(c.Bucket, key))
+	}
+	if strings.Contains(c.Bucket, ".") {
+		return nil, errors.New("this service needs a bucket name without a dot")
+	}
+	base, err := url.Parse(endpoint)
+	if err != nil || base.Host == "" {
+		return nil, errors.New("storage endpoint is invalid")
+	}
+	base.Host = c.Bucket + "." + base.Host
+	return url.Parse(strings.TrimRight(base.String(), "/") + objectKeyPath(key))
+}
+
+func objectKeyPath(key string) string {
+	key = strings.Trim(key, "/")
+	if key == "" {
+		return ""
+	}
+	path := ""
+	for _, part := range strings.Split(key, "/") {
+		path += "/" + escape(part)
+	}
+	return path
 }
 
 func objectPath(bucket, key string) string {
@@ -389,7 +499,7 @@ func readAPIError(resp *http.Response) error {
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	api := &apiError{Status: resp.StatusCode}
 	var body xmlError
-	if xml.Unmarshal(raw, &body) == nil {
+	if decodeXML(bytes.NewReader(raw), &body) == nil {
 		api.Code = strings.TrimSpace(body.Code)
 		api.Message = strings.TrimSpace(body.Message)
 	}
@@ -489,6 +599,20 @@ func escapePath(path string) string {
 		parts[i] = escape(unescaped)
 	}
 	return strings.Join(parts, "/")
+}
+
+var xmlnsAttr = regexp.MustCompile(`\sxmlns(:[A-Za-z0-9_-]+)?="[^"]*"`)
+
+func decodeXML(r io.Reader, dest any) error {
+	raw, err := io.ReadAll(io.LimitReader(r, 1<<20))
+	if err != nil {
+		return err
+	}
+	// S3 answers put the fields in a default namespace. encoding/xml then
+	// ignores them, which would make a versioned delete look successful
+	// while the object is still stored.
+	raw = xmlnsAttr.ReplaceAll(raw, nil)
+	return xml.Unmarshal(raw, dest)
 }
 
 func escapeXMLText(s string) string {

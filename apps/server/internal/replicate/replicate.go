@@ -11,22 +11,17 @@ import (
 	"log"
 	"sync"
 
-	"harbor/internal/remote/r2"
+	"harbor/internal/providers"
 	"harbor/internal/store"
 )
 
-var openClient = func(d store.Destination) (*r2.Client, error) {
-	if d.Provider != store.ProviderCloudflareR2 {
-		return nil, errors.New("this destination is not supported yet")
-	}
-	return r2.FromDestination(d)
-}
+var openClient = providers.Open
 
-var storageLimit = func(provider string) int64 {
-	if provider == store.ProviderCloudflareR2 {
-		return r2.FreeStorageBytes
+var storageLimit = func(d store.Destination) int64 {
+	if d.AllowOverFree {
+		return 0
 	}
-	return 0
+	return providers.FreeBytes(d.Provider)
 }
 
 var copyMu sync.Mutex
@@ -97,14 +92,18 @@ func SyncBackup(ctx context.Context, st *store.Store, backup store.Backup) (stri
 		}
 	}
 	if !present && !shared {
-		limit := storageLimit(dest.Provider)
+		limit := storageLimit(dest)
 		if limit > 0 {
-			used, err := st.AccountUsage(ctx, dest.Provider, dest.AccountID)
+			scope := dest.AccountID
+			if scope == "" {
+				scope = dest.AccessKeyID
+			}
+			used, err := st.AccountUsage(ctx, dest.Provider, scope)
 			if err != nil {
 				return "", err
 			}
 			if used+backup.SizeBytes > limit {
-				msg := fmt.Sprintf("Cloudflare R2 free storage holds %s. This backup stays on this machine.", formatBytes(limit))
+				msg := fmt.Sprintf("%s free storage holds %s. This backup stays on this machine.", providers.Label(dest.Provider), formatBytes(limit))
 				if err := st.UpsertReplica(ctx, backup.ID, store.Replica{
 					DestinationID: dest.ID, ObjectKey: key, Status: "skipped", Error: msg, SizeBytes: backup.SizeBytes,
 				}); err != nil {

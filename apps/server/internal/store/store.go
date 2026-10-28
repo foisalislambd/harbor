@@ -61,18 +61,21 @@ type Project struct {
 const ProviderCloudflareR2 = "cloudflare_r2"
 
 type Destination struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Provider     string `json:"provider"`
-	AccountID    string `json:"account_id"`
-	AccessKeyID  string `json:"access_key_id"`
-	Secret       string `json:"-"`
-	Bucket       string `json:"bucket"`
-	Jurisdiction string `json:"jurisdiction"`
-	KeyPrefix    string `json:"key_prefix"`
-	UsedBytes    int64  `json:"used_bytes"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	Provider      string `json:"provider"`
+	AccountID     string `json:"account_id"`
+	AccessKeyID   string `json:"access_key_id"`
+	Secret        string `json:"-"`
+	Bucket        string `json:"bucket"`
+	Jurisdiction  string `json:"jurisdiction"`
+	Region        string `json:"region"`
+	Endpoint      string `json:"endpoint"`
+	AllowOverFree bool   `json:"allow_over_free"`
+	KeyPrefix     string `json:"key_prefix"`
+	UsedBytes     int64  `json:"used_bytes"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 type BackupCopy struct {
@@ -212,7 +215,25 @@ func migrate(db *sql.DB) error {
 			return err
 		}
 	}
-	return nil
+	if err := addColumn(db, "destinations", "region", `ALTER TABLE destinations ADD COLUMN region TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := addColumn(db, "destinations", "endpoint", `ALTER TABLE destinations ADD COLUMN endpoint TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	return addColumn(db, "destinations", "allow_over_free", `ALTER TABLE destinations ADD COLUMN allow_over_free INTEGER NOT NULL DEFAULT 0`)
+}
+
+func addColumn(db *sql.DB, table, column, stmt string) error {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('`+table+`') WHERE name = ?`, column).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	_, err := db.Exec(stmt)
+	return err
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -1112,7 +1133,9 @@ func queueIfUnreferenced(ctx context.Context, q queryer, pairs [][2]string) erro
 			JOIN destinations d ON d.id = r.destination_id
 			JOIN destinations target ON target.id = ?
 			WHERE r.status = 'synced' AND r.object_key = ?
-			AND d.provider = target.provider AND d.account_id = target.account_id AND d.bucket = target.bucket`, pair[0], pair[1]).Scan(&n); err != nil {
+			AND d.provider = target.provider
+			AND COALESCE(NULLIF(d.account_id, ''), d.access_key_id) = COALESCE(NULLIF(target.account_id, ''), target.access_key_id)
+			AND d.bucket = target.bucket`, pair[0], pair[1]).Scan(&n); err != nil {
 			return err
 		}
 		if n > 0 {
@@ -1164,8 +1187,12 @@ func (s *Store) CreateDestination(ctx context.Context, d Destination) (Destinati
 	d.ID = id.New("dst_")
 	d.CreatedAt = Now()
 	d.UpdatedAt = d.CreatedAt
-	_, err := s.db.ExecContext(ctx, `INSERT INTO destinations (id, name, provider, account_id, access_key_id, secret_access_key, bucket, jurisdiction, key_prefix, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, d.Name, d.Provider, d.AccountID, d.AccessKeyID, d.Secret, d.Bucket, d.Jurisdiction, d.KeyPrefix, d.CreatedAt, d.UpdatedAt)
+	over := 0
+	if d.AllowOverFree {
+		over = 1
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO destinations (id, name, provider, account_id, access_key_id, secret_access_key, bucket, jurisdiction, region, endpoint, allow_over_free, key_prefix, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.Name, d.Provider, d.AccountID, d.AccessKeyID, d.Secret, d.Bucket, d.Jurisdiction, d.Region, d.Endpoint, over, d.KeyPrefix, d.CreatedAt, d.UpdatedAt)
 	if err != nil {
 		return Destination{}, err
 	}
@@ -1174,7 +1201,7 @@ func (s *Store) CreateDestination(ctx context.Context, d Destination) (Destinati
 }
 
 func (s *Store) ListDestinations(ctx context.Context) ([]Destination, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, provider, account_id, access_key_id, bucket, jurisdiction, key_prefix, created_at, updated_at FROM destinations ORDER BY name COLLATE NOCASE`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, provider, account_id, access_key_id, bucket, jurisdiction, region, endpoint, allow_over_free, key_prefix, created_at, updated_at FROM destinations ORDER BY name COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
 	}
@@ -1202,17 +1229,19 @@ func (s *Store) ListDestinations(ctx context.Context) ([]Destination, error) {
 
 func scanDestination(row interface{ Scan(dest ...any) error }, withSecret bool) (Destination, error) {
 	var d Destination
+	var over int
 	var err error
 	if withSecret {
-		err = row.Scan(&d.ID, &d.Name, &d.Provider, &d.AccountID, &d.AccessKeyID, &d.Secret, &d.Bucket, &d.Jurisdiction, &d.KeyPrefix, &d.CreatedAt, &d.UpdatedAt)
+		err = row.Scan(&d.ID, &d.Name, &d.Provider, &d.AccountID, &d.AccessKeyID, &d.Secret, &d.Bucket, &d.Jurisdiction, &d.Region, &d.Endpoint, &over, &d.KeyPrefix, &d.CreatedAt, &d.UpdatedAt)
 	} else {
-		err = row.Scan(&d.ID, &d.Name, &d.Provider, &d.AccountID, &d.AccessKeyID, &d.Bucket, &d.Jurisdiction, &d.KeyPrefix, &d.CreatedAt, &d.UpdatedAt)
+		err = row.Scan(&d.ID, &d.Name, &d.Provider, &d.AccountID, &d.AccessKeyID, &d.Bucket, &d.Jurisdiction, &d.Region, &d.Endpoint, &over, &d.KeyPrefix, &d.CreatedAt, &d.UpdatedAt)
 	}
+	d.AllowOverFree = over != 0
 	return d, err
 }
 
 func (s *Store) GetDestination(ctx context.Context, destinationID string) (Destination, error) {
-	d, err := scanDestination(s.db.QueryRowContext(ctx, `SELECT id, name, provider, account_id, access_key_id, secret_access_key, bucket, jurisdiction, key_prefix, created_at, updated_at FROM destinations WHERE id = ?`, destinationID), true)
+	d, err := scanDestination(s.db.QueryRowContext(ctx, `SELECT id, name, provider, account_id, access_key_id, secret_access_key, bucket, jurisdiction, region, endpoint, allow_over_free, key_prefix, created_at, updated_at FROM destinations WHERE id = ?`, destinationID), true)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Destination{}, ErrNotFound
 	}
@@ -1258,7 +1287,7 @@ func (s *Store) AccountUsage(ctx context.Context, provider, accountID string) (i
 	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(size_bytes), 0) FROM (
 		SELECT MAX(r.size_bytes) AS size_bytes
 		FROM replicas r JOIN destinations d ON d.id = r.destination_id
-		WHERE d.provider = ? AND d.account_id = ? AND r.status = 'synced'
+		WHERE d.provider = ? AND COALESCE(NULLIF(d.account_id, ''), d.access_key_id) = ? AND r.status = 'synced'
 		GROUP BY d.bucket, r.object_key
 	)`, provider, accountID).Scan(&n)
 	return n, err
@@ -1267,11 +1296,15 @@ func (s *Store) AccountUsage(ctx context.Context, provider, accountID string) (i
 // RemoteObjectStored reports whether this exact bucket and key are already in R2.
 func (s *Store) RemoteObjectStored(ctx context.Context, d Destination, objectKey string) (bool, error) {
 	var n int
+	scope := d.AccountID
+	if scope == "" {
+		scope = d.AccessKeyID
+	}
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM replicas r
 		JOIN destinations d ON d.id = r.destination_id
 		WHERE r.status = 'synced' AND r.object_key = ?
-		AND d.provider = ? AND d.account_id = ? AND d.bucket = ?`,
-		objectKey, d.Provider, d.AccountID, d.Bucket).Scan(&n)
+		AND d.provider = ? AND COALESCE(NULLIF(d.account_id, ''), d.access_key_id) = ? AND d.bucket = ?`,
+		objectKey, d.Provider, scope, d.Bucket).Scan(&n)
 	return n > 0, err
 }
 

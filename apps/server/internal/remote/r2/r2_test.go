@@ -86,7 +86,7 @@ func TestPutDeleteAndMultipart(t *testing.T) {
 	defer srv.Close()
 	client := &Client{
 		Endpoint: srv.URL, Bucket: "backups", AccessKey: "AKIAIOSFODNN7EXAMPLE",
-		Secret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", Region: "auto", HTTP: srv.Client(),
+		Secret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", Region: "auto", StorageClass: "STANDARD", HTTP: srv.Client(),
 	}
 	ctx := context.Background()
 	sum := sha256.Sum256([]byte("hello"))
@@ -152,6 +152,50 @@ func TestMultipartAbortsWhenAPartFails(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(methods, "\n"), "DELETE") {
 		t.Fatalf("multipart was not aborted: %v", methods)
+	}
+}
+
+func TestDeleteRemovesEveryVersion(t *testing.T) {
+	var deleted []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/xml")
+			_, _ = io.WriteString(w, `<ListVersionsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+				<IsTruncated>false</IsTruncated>
+				<Version><Key>harbor/blobs/abc</Key><VersionId>v1</VersionId></Version>
+				<Version><Key>harbor/blobs/other</Key><VersionId>skip</VersionId></Version>
+				<DeleteMarker><Key>harbor/blobs/abc</Key><VersionId>m1</VersionId></DeleteMarker>
+			</ListVersionsResult>`)
+			return
+		}
+		deleted = append(deleted, r.URL.Query().Get("versionId"))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+	client := &Client{
+		Endpoint: srv.URL, Bucket: "backups", AccessKey: "key", Secret: "secretsecret",
+		Region: "us-west-004", Versioned: true, HTTP: srv.Client(),
+	}
+	if err := client.Delete(context.Background(), "harbor/blobs/abc"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(deleted, ",") != "v1,m1" {
+		t.Fatalf("deleted %v", deleted)
+	}
+}
+
+func TestVirtualHostPutsTheBucketInTheHost(t *testing.T) {
+	client := &Client{Endpoint: "https://s3.oss-cn-hangzhou.aliyuncs.com", Bucket: "harbor", VirtualHost: true}
+	got, err := client.target("harbor/blobs/abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Host != "harbor.s3.oss-cn-hangzhou.aliyuncs.com" || got.EscapedPath() != "/harbor/blobs/abc" {
+		t.Fatalf("%s %s", got.Host, got.EscapedPath())
+	}
+	client.Bucket = "my.bucket"
+	if _, err := client.target("a"); err == nil {
+		t.Fatal("dotted bucket should be rejected for virtual host")
 	}
 }
 

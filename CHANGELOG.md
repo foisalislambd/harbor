@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Cloudflare R2 as a backup destination. Backups stay on this machine, and a project can also keep a second copy in R2's free Standard storage (10 GB).
+- Object storage destinations. Backups stay on this machine, and a project can also keep a second copy. Cloudflare R2 and Backblaze B2 stay inside the 10 GB free allowance unless that is turned off. Other S3-compatible services can be added from the same page.
 
 ## [0.1.1] - 2026-10-16
 

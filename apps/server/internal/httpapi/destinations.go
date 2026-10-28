@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"harbor/internal/remote/r2"
+	"harbor/internal/providers"
 	"harbor/internal/replicate"
 	"harbor/internal/store"
 
@@ -24,7 +24,11 @@ func (a *API) listDestinations(w http.ResponseWriter, r *http.Request) {
 	views := make([]destinationView, 0, len(items))
 	for _, item := range items {
 		view := withFree(item)
-		used, err := a.store.AccountUsage(r.Context(), item.Provider, item.AccountID)
+		scope := item.AccountID
+		if scope == "" {
+			scope = item.AccessKeyID
+		}
+		used, err := a.store.AccountUsage(r.Context(), item.Provider, scope)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "could not list destinations")
 			return
@@ -32,12 +36,11 @@ func (a *API) listDestinations(w http.ResponseWriter, r *http.Request) {
 		view.AccountUsedBytes = used
 		views = append(views, view)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"items":              views,
-		"free_storage_bytes": r2.FreeStorageBytes,
-		"free_class_a":       r2.FreeClassAMonthly,
-		"free_class_b":       r2.FreeClassBMonthly,
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"items": views})
+}
+
+func (a *API) listProviders(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"items": providers.All()})
 }
 
 func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
@@ -151,53 +154,44 @@ type destinationBody struct {
 	SecretAccessKey string `json:"secret_access_key"`
 	Bucket          string `json:"bucket"`
 	Jurisdiction    string `json:"jurisdiction"`
+	Region          string `json:"region"`
+	Endpoint        string `json:"endpoint"`
 	KeyPrefix       string `json:"key_prefix"`
+	AllowOverFree   bool   `json:"allow_over_free"`
 }
 
 type destinationView struct {
 	store.Destination
-	FreeStorageBytes int64 `json:"free_storage_bytes"`
-	AccountUsedBytes int64 `json:"account_used_bytes"`
+	ProviderName     string `json:"provider_name"`
+	FreeStorageBytes int64  `json:"free_storage_bytes"`
+	AccountUsedBytes int64  `json:"account_used_bytes"`
 }
 
 func withFree(d store.Destination) destinationView {
 	d.Secret = ""
-	return destinationView{Destination: d, FreeStorageBytes: r2.FreeStorageBytes}
+	return destinationView{
+		Destination:      d,
+		ProviderName:     providers.Label(d.Provider),
+		FreeStorageBytes: providers.FreeBytes(d.Provider),
+	}
 }
 
 func normalizeDestination(body destinationBody, creating bool) (store.Destination, error) {
-	if body.Provider == "" {
-		body.Provider = store.ProviderCloudflareR2
-	}
-	if body.Provider != store.ProviderCloudflareR2 {
-		return store.Destination{}, errors.New("only Cloudflare R2 can be added right now")
-	}
 	name := strings.TrimSpace(body.Name)
 	if name == "" || len(name) > 80 {
 		return store.Destination{}, errors.New("destination name is required")
 	}
-	jurisdiction := strings.ToLower(strings.TrimSpace(body.Jurisdiction))
-	if jurisdiction == "default" {
-		jurisdiction = ""
-	}
-	accountID, hinted := parseAccount(body.AccountID)
-	if jurisdiction == "" {
-		jurisdiction = hinted
-	}
-	if _, err := r2.EndpointURL(accountID, jurisdiction); err != nil {
-		return store.Destination{}, err
-	}
 	access := strings.TrimSpace(body.AccessKeyID)
-	if !accessKeyPattern.MatchString(access) {
-		return store.Destination{}, errors.New("access key ID is required")
+	if !validAccess(access) {
+		return store.Destination{}, errors.New("access key is required")
 	}
 	secret := strings.TrimSpace(body.SecretAccessKey)
 	if creating && !validSecret(secret) {
-		return store.Destination{}, errors.New("secret access key is required")
+		return store.Destination{}, errors.New("secret key is required")
 	}
-	bucket := strings.TrimSpace(body.Bucket)
-	if !bucketPattern.MatchString(bucket) {
-		return store.Destination{}, errors.New("bucket name must be 3 to 63 lowercase letters, numbers, or hyphens")
+	bucket := strings.ToLower(strings.TrimSpace(body.Bucket))
+	if !bucketPattern.MatchString(bucket) || strings.Contains(bucket, "..") {
+		return store.Destination{}, errors.New("bucket name must be 3 to 63 lowercase letters, numbers, dots, or hyphens")
 	}
 	prefix := strings.TrimSpace(body.KeyPrefix)
 	if prefix == "" {
@@ -206,19 +200,40 @@ func normalizeDestination(body destinationBody, creating bool) (store.Destinatio
 	if !validPrefix(prefix) {
 		return store.Destination{}, errors.New("key prefix can only use letters, numbers, and / . _ -")
 	}
-	return store.Destination{
-		Name: name, Provider: body.Provider, AccountID: strings.ToLower(strings.TrimSpace(accountID)),
-		AccessKeyID: access, Secret: secret, Bucket: bucket, Jurisdiction: jurisdiction, KeyPrefix: prefix,
-	}, nil
+	accountID := strings.TrimSpace(body.AccountID)
+	jurisdiction := body.Jurisdiction
+	if body.Provider == store.ProviderCloudflareR2 {
+		var hinted string
+		accountID, hinted = parseAccount(accountID)
+		if strings.TrimSpace(jurisdiction) == "" {
+			jurisdiction = hinted
+		}
+		accountID = strings.ToLower(accountID)
+	}
+	return providers.Prepare(store.Destination{
+		Name: name, Provider: body.Provider, AccountID: accountID,
+		AccessKeyID: access, Secret: secret, Bucket: bucket,
+		Jurisdiction: jurisdiction, Region: body.Region, Endpoint: body.Endpoint,
+		AllowOverFree: body.AllowOverFree, KeyPrefix: prefix,
+	})
 }
 
-var (
-	accessKeyPattern = regexp.MustCompile(`^[A-Za-z0-9]{16,128}$`)
-	bucketPattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$`)
-)
+var bucketPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
+
+func validAccess(access string) bool {
+	if len(access) < 3 || len(access) > 128 {
+		return false
+	}
+	for _, r := range access {
+		if r <= 32 || r > 126 {
+			return false
+		}
+	}
+	return true
+}
 
 func validSecret(secret string) bool {
-	if len(secret) < 8 || len(secret) > 256 {
+	if len(secret) < 8 || len(secret) > 512 {
 		return false
 	}
 	for _, r := range secret {
@@ -265,7 +280,7 @@ func validPrefix(prefix string) bool {
 }
 
 func checkDestination(ctx context.Context, dest store.Destination) error {
-	client, err := r2.FromDestination(dest)
+	client, err := providers.Open(dest)
 	if err != nil {
 		return err
 	}

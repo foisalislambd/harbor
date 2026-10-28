@@ -139,7 +139,7 @@ Panel users sign in with a session cookie and manage every project from `/`.
 ## What it keeps track of
 
 - Projects, with pause, retention (last N and/or N days), and a byte quota. `0` means unlimited. If a create request omits retention, Harbor keeps the last 14 snapshots for 30 days. A project can also select a destination. Backups stay on this machine, and a selected destination receives a second copy.
-- Destinations. Cloudflare R2 is the first one, using its free Standard storage (10 GB-month, 1 million Class A operations, 10 million Class B operations, and free egress). Harbor stops new copies at 10 GB. Other services can be added the same way later.
+- Destinations. A project can keep a second copy in object storage. Cloudflare R2 and Backblaze B2 stop at their 10 GB free allowance unless you allow more. Amazon S3, Wasabi, Google Cloud Storage, DigitalOcean Spaces, Hetzner, Scaleway, Linode, Vultr, OVH, Exoscale, Storj, Tigris, Filebase, IDrive e2, Oracle, IBM, Alibaba, Tencent, Contabo, Supabase, MEGA, and self-hosted S3 such as MinIO are available the same way. Harbor checks the bucket before saving.
 - API keys with `backup:read`, `backup:write`, and `backup:delete`. The secret is shown once.
 - Content-addressed blobs, so identical uploads share one file.
 - Schedules that turn overdue when a backup does not arrive in time.

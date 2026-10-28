@@ -100,6 +100,9 @@ CREATE TABLE IF NOT EXISTS destinations (
   secret_access_key TEXT NOT NULL,
   bucket TEXT NOT NULL,
   jurisdiction TEXT NOT NULL DEFAULT '',
+  region TEXT NOT NULL DEFAULT '',
+  endpoint TEXT NOT NULL DEFAULT '',
+  allow_over_free INTEGER NOT NULL DEFAULT 0,
   key_prefix TEXT NOT NULL DEFAULT 'harbor',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL

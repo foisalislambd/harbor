@@ -90,7 +90,7 @@ func TestFreeStorageIsSharedByOneCloudflareAccount(t *testing.T) {
 	st := openStore(t)
 	ctx := context.Background()
 	prev := storageLimit
-	storageLimit = func(string) int64 { return 6 }
+	storageLimit = func(store.Destination) int64 { return 6 }
 	t.Cleanup(func() { storageLimit = prev })
 
 	body := []byte("hello!")
@@ -151,7 +151,7 @@ func TestSyncStopsAtFreeStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 	prev := storageLimit
-	storageLimit = func(string) int64 { return 4 }
+	storageLimit = func(store.Destination) int64 { return 4 }
 	t.Cleanup(func() { storageLimit = prev })
 	body := []byte("hello")
 	sum := sha256.Sum256(body)

@@ -178,11 +178,11 @@ export default function ProjectDetailPage() {
             >
               <option value="">This machine only</option>
               {destinations.map((destination) => (
-                <option key={destination.id} value={destination.id}>{destination.name} · Cloudflare R2</option>
+                <option key={destination.id} value={destination.id}>{destination.name} · {destination.provider_name || destination.provider}</option>
               ))}
             </select>
             <p className="mt-1.5 text-xs text-gray-500">
-              Backups stay on this machine either way. Pick Cloudflare to also keep a second copy. Add it on the{" "}
+              Backups stay on this machine either way. Pick a destination to also keep a second copy. Add one on the{" "}
               <Link to="/destinations" className="font-medium text-brand-600">Destinations</Link> page.
             </p>
           </label>
