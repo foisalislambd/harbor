@@ -4,6 +4,7 @@ import { AdminRootLayout } from "@/layouts/AdminRootLayout";
 import ActivityPage from "@/pages/admin/ActivityPage";
 import BackupsPage from "@/pages/admin/BackupsPage";
 import DashboardPage from "@/pages/admin/DashboardPage";
+import DestinationNewPage from "@/pages/admin/DestinationNewPage";
 import DestinationsPage from "@/pages/admin/DestinationsPage";
 import GuidePage from "@/pages/admin/GuidePage";
 import LoginPage from "@/pages/admin/LoginPage";
@@ -23,6 +24,7 @@ export const zenPanelAdminRoute = (
       <Route path="projects/:projectId" element={<ProjectDetailPage />} />
       <Route path="backups" element={<BackupsPage />} />
       <Route path="destinations" element={<DestinationsPage />} />
+      <Route path="destinations/new/:providerId" element={<DestinationNewPage />} />
       <Route path="activity" element={<ActivityPage />} />
       <Route path="guide" element={<GuidePage />} />
       <Route path="settings" element={<SettingsPage />} />

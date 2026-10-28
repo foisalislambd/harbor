@@ -89,7 +89,7 @@ export function AdminLoginForm() {
                 id="email"
                 type="email"
                 autoComplete="username"
-                placeholder="you@example.com"
+                placeholder="admin@harbor.local"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -107,7 +107,7 @@ export function AdminLoginForm() {
                 id="password"
                 type={showPassword ? "text" : "password"}
                 autoComplete={needsSetup ? "new-password" : "current-password"}
-                placeholder="At least 8 characters"
+                placeholder="admin@123456"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required

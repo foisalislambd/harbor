@@ -20,6 +20,8 @@ import (
 	"harbor/internal/panel"
 	"harbor/internal/replicate"
 	"harbor/internal/store"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -100,6 +102,10 @@ func boot(cfg config.Config) (*running, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := seedOwner(st); err != nil {
+		st.Close()
+		return nil, err
+	}
 	ln, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		st.Close()
@@ -141,6 +147,28 @@ func runRetention(st *store.Store) {
 		log.Printf("retention: %v", err)
 	}
 	replicate.FlushDeletes(context.Background(), st)
+}
+
+const (
+	seedEmail    = "admin@harbor.local"
+	seedPassword = "admin@123456"
+)
+
+func seedOwner(st *store.Store) error {
+	n, err := st.UserCount(context.Background())
+	if err != nil || n > 0 {
+		return err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(seedPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	_, err = st.CreateOwner(context.Background(), seedEmail, "Admin", string(hash))
+	if err != nil {
+		return err
+	}
+	log.Printf("seeded owner %s", seedEmail)
+	return nil
 }
 
 func serve(args []string) error {

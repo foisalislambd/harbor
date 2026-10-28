@@ -96,7 +96,9 @@ npm install
 npm run dev
 ```
 
-Open http://127.0.0.1:5173. The dev server proxies `/api` to port 8787. The first visit creates the owner account.
+Open http://127.0.0.1:5173. The dev server proxies `/api` to port 8787.
+
+An empty data directory signs in as `admin@harbor.local` / `admin@123456`. Change that password in Settings if this Harbor is reachable by anyone else.
 
 ## Docker
 
