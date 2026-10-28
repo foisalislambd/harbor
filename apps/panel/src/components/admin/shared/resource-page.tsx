@@ -1,7 +1,8 @@
 import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminAddButton } from "@/components/admin/ui/admin-add-button";
 import { AdminFilterGroup } from "@/components/admin/ui/admin-filter-group";
-import { AdminPagination, slicePage } from "@/components/admin/ui/admin-pagination";
+import { AdminPagination } from "@/components/admin/ui/admin-pagination";
+import { slicePage } from "@/lib/page-slice";
 import { AdminRowActions } from "@/components/admin/ui/admin-row-actions";
 import type {
   AdminResource,
@@ -78,7 +79,7 @@ export function ResourcePage({
   );
 
   return (
-    <div className="admin-content space-y-6">
+    <div className="admin-content space-y-3">
       <AdminPageHeader title={title} actions={<AdminAddButton onClick={onAdd} />} />
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

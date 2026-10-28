@@ -56,7 +56,31 @@ export default function ProjectDetailPage() {
   }
 
   useEffect(() => {
-    load().catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load project"));
+    let cancelled = false;
+    Promise.all([
+      api<Project>(`/api/v1/projects/${projectId}`),
+      api<{ items: ApiKey[] }>(`/api/v1/projects/${projectId}/keys`),
+      api<{ items: Webhook[] }>(`/api/v1/projects/${projectId}/webhooks`),
+      api<{ items: Schedule[] }>(`/api/v1/projects/${projectId}/schedules`),
+      api<{ items: Backup[] }>(`/api/v1/backups?project_id=${projectId}&limit=8`),
+      api<DestinationList>("/api/v1/destinations"),
+    ])
+      .then(([projectRes, keyRes, hookRes, scheduleRes, backupRes, destinationRes]) => {
+        if (cancelled) return;
+        setProject(projectRes);
+        setSavedDestination(projectRes.destination_id || "");
+        setKeys(keyRes.items);
+        setHooks(hookRes.items);
+        setSchedules(scheduleRes.items);
+        setBackups(backupRes.items);
+        setDestinations(destinationRes.items);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load project");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [projectId]);
 
   async function save(e: React.FormEvent) {
@@ -105,7 +129,7 @@ export default function ProjectDetailPage() {
   const quotaLabel = project.quota_bytes > 0 ? `${formatBytes(project.used_bytes)} / ${formatBytes(project.quota_bytes)}` : `${formatBytes(project.used_bytes)} stored`;
 
   return (
-    <div className="admin-content space-y-6">
+    <div className="admin-content space-y-3">
       <AdminPageHeader
         title={project.name}
         actions={

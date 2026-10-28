@@ -36,7 +36,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="admin-content space-y-6">
+    <div className="admin-content space-y-3">
       <DashboardWelcome />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {cards.map((card) => {
@@ -61,7 +61,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-5">
+      <div className="grid gap-3 xl:grid-cols-5">
         <section className="admin-card xl:col-span-3">
           <div className="admin-card-body">
             <AdminPageHeader

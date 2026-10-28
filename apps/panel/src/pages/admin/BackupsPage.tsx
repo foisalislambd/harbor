@@ -25,11 +25,21 @@ export default function BackupsPage() {
   const projectId = params.get("project_id") ?? "";
   const page = Math.max(1, Number.parseInt(params.get("page") || "1", 10) || 1);
   const [draftQuery, setDraftQuery] = useState(q);
+  const [seenQuery, setSeenQuery] = useState(q);
+  if (q !== seenQuery) {
+    setSeenQuery(q);
+    setDraftQuery(q);
+  }
   const [projects, setProjects] = useState<Project[]>([]);
   const [items, setItems] = useState<Backup[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [uploadProject, setUploadProject] = useState(projectId);
+  const [seenProject, setSeenProject] = useState(projectId);
+  if (projectId !== seenProject) {
+    setSeenProject(projectId);
+    setUploadProject(projectId);
+  }
   const [file, setFile] = useState<File | null>(null);
   const [fileKey, setFileKey] = useState(0);
   const [kind, setKind] = useState("archive");
@@ -56,9 +66,19 @@ export default function BackupsPage() {
   }, []);
 
   useEffect(() => {
-    setDraftQuery(q);
-    setUploadProject(projectId);
-    load().catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load backups"));
+    const query = new URLSearchParams();
+    if (q) query.set("q", q);
+    if (projectId) query.set("project_id", projectId);
+    query.set("limit", String(pageSize));
+    query.set("offset", String((page - 1) * pageSize));
+    const id = ++requestId.current;
+    api<{ items: Backup[]; total: number }>(`/api/v1/backups?${query.toString()}`)
+      .then((res) => {
+        if (id !== requestId.current) return;
+        setItems(res.items);
+        setTotal(res.total);
+      })
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load backups"));
   }, [q, projectId, page]);
 
   async function upload(e: React.FormEvent) {
@@ -84,7 +104,7 @@ export default function BackupsPage() {
   }
 
   return (
-    <div className="admin-content space-y-6">
+    <div className="admin-content space-y-3">
       <AdminPageHeader title="Backups" />
       {error && <p className="text-sm text-error-500">{error}</p>}
 

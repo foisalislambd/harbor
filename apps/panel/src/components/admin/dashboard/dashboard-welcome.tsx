@@ -24,7 +24,7 @@ export function DashboardWelcome() {
   const name = admin?.username ?? adminConfig.brand.name;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-brand-200/60 bg-gradient-to-br from-brand-500 via-brand-600 to-brand-800 p-5 sm:p-6 lg:p-8 dark:border-brand-500/20">
+    <div className="relative overflow-hidden rounded-xl border border-brand-200/60 bg-gradient-to-br from-brand-500 via-brand-600 to-brand-800 p-4 sm:p-5 dark:border-brand-500/20">
       <div
         className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-white/10 blur-2xl"
         aria-hidden

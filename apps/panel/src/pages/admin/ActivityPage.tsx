@@ -17,7 +17,7 @@ export default function ActivityPage() {
   if (!items) return <AdminLoading message="Loading activity…" />;
 
   return (
-    <div className="admin-content space-y-6">
+    <div className="admin-content space-y-3">
       <AdminPageHeader title="Activity" />
       <div className="admin-card overflow-x-auto">
         <table className="w-full min-w-[640px] text-left text-sm">

@@ -1,7 +1,7 @@
 import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { ProviderLogo } from "@/components/provider-logo";
-import { fieldClass, labelClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
+import { fieldClass, labelClass, primaryButtonClass } from "@/lib/fields";
 import { api, formatBytes, type StorageProvider, type StorageProviderList } from "@/lib/harbor-api";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -67,7 +67,6 @@ export default function DestinationNewPage() {
   return (
     <div className="admin-content space-y-3">
       <AdminPageHeader
-        compact
         title={provider?.name || "Service"}
         actions={<Link to="/destinations" className="inline-flex h-8 items-center justify-center rounded-lg border border-gray-200 px-3 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/5">Back</Link>}
       />

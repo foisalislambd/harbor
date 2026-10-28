@@ -28,13 +28,28 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    load().catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load settings"));
+    let cancelled = false;
+    Promise.all([
+      api<Settings>("/api/v1/settings"),
+      api<{ items: SessionUser[] }>("/api/v1/users"),
+    ])
+      .then(([settingsRes, usersRes]) => {
+        if (cancelled) return;
+        setSettings(settingsRes);
+        setUsers(usersRes.items);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load settings");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (!settings && !error) return <AdminLoading message="Loading settings…" />;
 
   return (
-    <div className="admin-content space-y-6">
+    <div className="admin-content space-y-3">
       <AdminPageHeader title="Settings" />
       {error && <p className="text-sm text-error-500">{error}</p>}
       {message && <p className="text-sm text-success-600">{message}</p>}

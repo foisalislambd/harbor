@@ -29,7 +29,17 @@ export default function ProjectsPage() {
   }
 
   useEffect(() => {
-    load().catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load projects"));
+    let cancelled = false;
+    api<{ items: Project[] }>("/api/v1/projects")
+      .then((res) => {
+        if (!cancelled) setProjects(res.items);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load projects");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function createProject(e: React.FormEvent) {
@@ -60,7 +70,7 @@ export default function ProjectsPage() {
   if (!projects && !error) return <AdminLoading message="Loading projects…" />;
 
   return (
-    <div className="admin-content space-y-6">
+    <div className="admin-content space-y-3">
       <AdminPageHeader title="Projects" actions={<AdminAddButton label="New project" onClick={() => setOpen(true)} />} />
       {error && <p className="text-sm text-error-500">{error}</p>}
       {projects && projects.length === 0 ? (

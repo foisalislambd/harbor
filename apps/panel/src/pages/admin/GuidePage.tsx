@@ -11,7 +11,7 @@ const cli = `harbor push -file backup.tar.gz -token hb_your_project_key -name ni
 
 export default function GuidePage() {
   return (
-    <div className="admin-content space-y-6">
+    <div className="admin-content space-y-3">
       <AdminPageHeader title="API guide" />
       <div className="admin-card">
         <div className="admin-card-body space-y-4 text-sm leading-relaxed text-gray-600 dark:text-gray-300">

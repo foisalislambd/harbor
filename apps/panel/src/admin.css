@@ -21,7 +21,7 @@
 
 .admin-content {
   width: 100%;
-  max-width: 100%;
+  max-width: 72rem;
 }
 
 .admin-topbar {
@@ -48,18 +48,12 @@
 }
 
 .admin-card-body {
-  padding: 1rem;
+  padding: 0.875rem;
 }
 
 @media (min-width: 640px) {
   .admin-card-body {
-    padding: 1.25rem;
-  }
-}
-
-@media (min-width: 768px) {
-  .admin-card-body {
-    padding: 1.5rem;
+    padding: 1rem;
   }
 }
 

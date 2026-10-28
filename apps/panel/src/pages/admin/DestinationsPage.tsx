@@ -18,7 +18,13 @@ export default function DestinationsPage() {
   const [items, setItems] = useState<Destination[] | null>(null);
   const [providers, setProviders] = useState<StorageProvider[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const flash = (location.state as { message?: string } | null)?.message ?? null;
+  const [message, setMessage] = useState<string | null>(flash);
+  const [appliedFlash, setAppliedFlash] = useState(flash);
+  if (flash !== appliedFlash) {
+    setAppliedFlash(flash);
+    if (flash) setMessage(flash);
+  }
 
   const groups = useMemo(() => {
     const order: string[] = [];
@@ -38,16 +44,29 @@ export default function DestinationsPage() {
   }
 
   useEffect(() => {
-    const note = (location.state as { message?: string } | null)?.message;
-    if (note) setMessage(note);
-    load().catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load destinations"));
+    let cancelled = false;
+    Promise.all([
+      api<DestinationList>("/api/v1/destinations"),
+      api<StorageProviderList>("/api/v1/destination-providers"),
+    ])
+      .then(([destinations, catalog]) => {
+        if (cancelled) return;
+        setItems(destinations.items);
+        setProviders(catalog.items);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load destinations");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [location.state]);
 
   if (!items && !error) return <AdminLoading message="Loading destinations…" />;
 
   return (
     <div className="admin-content space-y-3">
-      <AdminPageHeader compact title="Destinations" />
+      <AdminPageHeader title="Destinations" />
       {error && <p className="text-sm text-error-500">{error}</p>}
       {message && <p className="text-sm text-success-600">{message}</p>}
 
