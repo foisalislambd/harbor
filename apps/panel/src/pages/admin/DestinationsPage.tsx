@@ -73,10 +73,6 @@ export default function DestinationsPage() {
       <section className="admin-card">
         <div className="admin-card-body space-y-4">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">Add storage</h2>
-          <p className="max-w-2xl text-sm leading-relaxed text-gray-500">
-            Backups always stay on this machine. A destination keeps a second copy in object storage.
-            Harbor checks the bucket before saving. Consumer drives such as Google Drive, Dropbox, and OneDrive are not listed, because they need a different sign-in than a bucket key.
-          </p>
           <div className="space-y-4">
             {groups.map((group) => (
               <div key={group.group}>
