@@ -138,7 +138,8 @@ Panel users sign in with a session cookie and manage every project from `/`.
 
 ## What it keeps track of
 
-- Projects, with pause, retention (last N and/or N days), and a byte quota. `0` means unlimited. If a create request omits retention, Harbor keeps the last 14 snapshots for 30 days.
+- Projects, with pause, retention (last N and/or N days), and a byte quota. `0` means unlimited. If a create request omits retention, Harbor keeps the last 14 snapshots for 30 days. A project can also select a destination. Backups stay on this machine, and a selected destination receives a second copy.
+- Destinations. Cloudflare R2 is the first one, using its free Standard storage (10 GB-month, 1 million Class A operations, 10 million Class B operations, and free egress). Harbor stops new copies at 10 GB. Other services can be added the same way later.
 - API keys with `backup:read`, `backup:write`, and `backup:delete`. The secret is shown once.
 - Content-addressed blobs, so identical uploads share one file.
 - Schedules that turn overdue when a backup does not arrive in time.

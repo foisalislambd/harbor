@@ -18,6 +18,7 @@ import (
 	"harbor/internal/desktop"
 	"harbor/internal/httpapi"
 	"harbor/internal/panel"
+	"harbor/internal/replicate"
 	"harbor/internal/store"
 )
 
@@ -108,9 +109,7 @@ func boot(cfg config.Config) (*running, error) {
 	if err := st.GCOrphanBlobs(context.Background()); err != nil {
 		log.Printf("blob gc: %v", err)
 	}
-	if err := st.EnforceAllRetention(context.Background()); err != nil {
-		log.Printf("retention: %v", err)
-	}
+	runRetention(st)
 	go func() {
 		ticker := time.NewTicker(15 * time.Minute)
 		defer ticker.Stop()
@@ -119,9 +118,7 @@ func boot(cfg config.Config) (*running, error) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := st.EnforceAllRetention(context.Background()); err != nil {
-					log.Printf("retention: %v", err)
-				}
+				runRetention(st)
 			}
 		}
 	}()
@@ -137,6 +134,13 @@ func boot(cfg config.Config) (*running, error) {
 		}
 	}()
 	return &running{srv: srv, store: st, cancel: cancel}, nil
+}
+
+func runRetention(st *store.Store) {
+	if err := st.EnforceAllRetention(context.Background()); err != nil {
+		log.Printf("retention: %v", err)
+	}
+	replicate.FlushDeletes(context.Background(), st)
 }
 
 func serve(args []string) error {

@@ -16,7 +16,7 @@ export default function GuidePage() {
       <div className="admin-card">
         <div className="admin-card-body space-y-4 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
           <p>
-            This is the same panel that opens when you run the Harbor desktop app. Create a project, then create an API key. Any application that can send an HTTP request can store a backup here. The key only sees that one project.
+            This is the same panel that opens when you run the Harbor desktop app. Create a project, then create an API key. Any application that can send an HTTP request can store a backup here. The key only sees that one project. Backups stay on this machine. On Destinations you can add Cloudflare R2, then choose it on a project to keep a second copy there too.
           </p>
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">Push a file</h2>
           <pre className="overflow-x-auto rounded-xl bg-gray-950 p-4 text-xs text-gray-100">{curl}</pre>

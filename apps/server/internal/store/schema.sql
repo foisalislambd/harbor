@@ -91,6 +91,41 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS destinations (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  access_key_id TEXT NOT NULL,
+  secret_access_key TEXT NOT NULL,
+  bucket TEXT NOT NULL,
+  jurisdiction TEXT NOT NULL DEFAULT '',
+  key_prefix TEXT NOT NULL DEFAULT 'harbor',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS replicas (
+  id TEXT PRIMARY KEY,
+  backup_id TEXT NOT NULL REFERENCES backups(id) ON DELETE CASCADE,
+  destination_id TEXT NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
+  object_key TEXT NOT NULL,
+  status TEXT NOT NULL,
+  error TEXT NOT NULL DEFAULT '',
+  size_bytes INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (backup_id, destination_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_replicas_object ON replicas(destination_id, object_key);
+
+CREATE TABLE IF NOT EXISTS remote_deletes (
+  destination_id TEXT NOT NULL REFERENCES destinations(id) ON DELETE CASCADE,
+  object_key TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (destination_id, object_key)
+);
+
 CREATE TABLE IF NOT EXISTS setup_guard (
   id INTEGER PRIMARY KEY CHECK (id = 1)
 );

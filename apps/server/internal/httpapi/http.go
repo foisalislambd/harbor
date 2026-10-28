@@ -22,6 +22,7 @@ import (
 
 	"harbor/internal/config"
 	"harbor/internal/panel"
+	"harbor/internal/replicate"
 	"harbor/internal/store"
 	"harbor/internal/webhook"
 
@@ -99,6 +100,12 @@ func (a *API) Handler() http.Handler {
 			r.Get("/projects/{projectID}/schedules", a.listSchedules)
 			r.Post("/projects/{projectID}/schedules", a.createSchedule)
 			r.Delete("/projects/{projectID}/schedules/{scheduleID}", a.deleteSchedule)
+			r.Get("/destinations", a.listDestinations)
+			r.Post("/destinations", a.createDestination)
+			r.Delete("/destinations/{destinationID}", a.deleteDestination)
+			r.Post("/destinations/{destinationID}/test", a.testDestination)
+			r.Post("/projects/{projectID}/replicate", a.replicateProject)
+			r.Post("/backups/{backupID}/replicate", a.replicateBackup)
 		})
 
 		r.Group(func(r chi.Router) {
@@ -482,12 +489,13 @@ func (a *API) audit(w http.ResponseWriter, r *http.Request) {
 }
 
 type projectBody struct {
-	Name           string `json:"name"`
-	Description    string `json:"description"`
-	Status         string `json:"status"`
-	RetentionCount int    `json:"retention_count"`
-	RetentionDays  int    `json:"retention_days"`
-	QuotaBytes     int64  `json:"quota_bytes"`
+	Name           string  `json:"name"`
+	Description    string  `json:"description"`
+	Status         string  `json:"status"`
+	RetentionCount int     `json:"retention_count"`
+	RetentionDays  int     `json:"retention_days"`
+	QuotaBytes     int64   `json:"quota_bytes"`
+	DestinationID  *string `json:"destination_id"`
 }
 
 func (a *API) listProjects(w http.ResponseWriter, r *http.Request) {
@@ -577,6 +585,19 @@ func (a *API) updateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if body.DestinationID != nil {
+		destinationID := strings.TrimSpace(*body.DestinationID)
+		if destinationID != "" {
+			if _, err := a.store.GetDestination(r.Context(), destinationID); errors.Is(err, store.ErrNotFound) {
+				writeError(w, http.StatusBadRequest, "choose a backup destination that exists")
+				return
+			} else if err != nil {
+				writeError(w, http.StatusInternalServerError, "could not load destination")
+				return
+			}
+		}
+		current.DestinationID = destinationID
+	}
 	current.Name = body.Name
 	current.Description = body.Description
 	current.Status = body.Status
@@ -595,6 +616,7 @@ func (a *API) updateProject(w http.ResponseWriter, r *http.Request) {
 	for _, b := range removed {
 		a.store.AddAudit(r.Context(), "system:retention", "backup.deleted", b.ID, b.Name)
 	}
+	replicate.FlushDeletes(r.Context(), a.store)
 	actor := principalFrom(r)
 	a.store.AddAudit(r.Context(), actor.Actor(), "project.updated", updated.ID, updated.Name)
 	updated, _ = a.store.GetProject(r.Context(), updated.ID)
@@ -614,6 +636,7 @@ func (a *API) deleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 	actor := principalFrom(r)
 	a.store.AddAudit(r.Context(), actor.Actor(), "project.deleted", id, p.Name)
+	replicate.FlushDeletes(r.Context(), a.store)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -1006,6 +1029,7 @@ func (a *API) ingest(w http.ResponseWriter, r *http.Request, projectID string) {
 	for _, old := range removed {
 		a.emit(r, project.ID, "backup.deleted", old)
 	}
+	replicate.FlushDeletes(r.Context(), a.store)
 	fresh, err := a.store.GetBackup(r.Context(), backup.ID)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusConflict, "backup was discarded by the retention policy")
@@ -1013,6 +1037,11 @@ func (a *API) ingest(w http.ResponseWriter, r *http.Request, projectID string) {
 	}
 	if err == nil {
 		backup = fresh
+	}
+	if _, err := replicate.SyncBackup(r.Context(), a.store, backup); err != nil {
+		log.Printf("replicate: %v", err)
+	} else if again, err := a.store.GetBackup(r.Context(), backup.ID); err == nil {
+		backup = again
 	}
 	writeJSON(w, http.StatusCreated, backup)
 }
@@ -1049,7 +1078,18 @@ func (a *API) downloadBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "backup file is missing")
+		body, remoteErr := replicate.OpenRemote(r.Context(), a.store, b)
+		if remoteErr != nil {
+			writeError(w, http.StatusNotFound, "backup file is missing")
+			return
+		}
+		defer body.Close()
+		w.Header().Set("Content-Type", b.ContentType)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": b.Filename}))
+		w.Header().Set("X-Checksum-Sha256", b.Checksum)
+		w.Header().Set("Content-Length", strconv.FormatInt(b.SizeBytes, 10))
+		_, _ = io.Copy(w, body)
 		return
 	}
 	defer f.Close()
@@ -1072,6 +1112,7 @@ func (a *API) deleteBackup(w http.ResponseWriter, r *http.Request) {
 	p := principalFrom(r)
 	a.store.AddAudit(r.Context(), p.Actor(), "backup.deleted", b.ID, b.Name)
 	a.emit(r, b.ProjectID, "backup.deleted", b)
+	replicate.FlushDeletes(r.Context(), a.store)
 	w.WriteHeader(http.StatusNoContent)
 }
 

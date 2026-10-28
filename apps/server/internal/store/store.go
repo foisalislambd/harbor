@@ -42,18 +42,59 @@ type User struct {
 }
 
 type Project struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Slug           string `json:"slug"`
-	Description    string `json:"description"`
-	Status         string `json:"status"`
-	RetentionCount int    `json:"retention_count"`
-	RetentionDays  int    `json:"retention_days"`
-	QuotaBytes     int64  `json:"quota_bytes"`
-	UsedBytes      int64  `json:"used_bytes"`
-	BackupCount    int    `json:"backup_count"`
-	CreatedAt      string `json:"created_at"`
-	UpdatedAt      string `json:"updated_at"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Slug            string `json:"slug"`
+	Description     string `json:"description"`
+	Status          string `json:"status"`
+	RetentionCount  int    `json:"retention_count"`
+	RetentionDays   int    `json:"retention_days"`
+	QuotaBytes      int64  `json:"quota_bytes"`
+	UsedBytes       int64  `json:"used_bytes"`
+	BackupCount     int    `json:"backup_count"`
+	DestinationID   string `json:"destination_id"`
+	DestinationName string `json:"destination_name"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
+}
+
+const ProviderCloudflareR2 = "cloudflare_r2"
+
+type Destination struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Provider     string `json:"provider"`
+	AccountID    string `json:"account_id"`
+	AccessKeyID  string `json:"access_key_id"`
+	Secret       string `json:"-"`
+	Bucket       string `json:"bucket"`
+	Jurisdiction string `json:"jurisdiction"`
+	KeyPrefix    string `json:"key_prefix"`
+	UsedBytes    int64  `json:"used_bytes"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+}
+
+type BackupCopy struct {
+	DestinationID string `json:"destination_id"`
+	Name          string `json:"name"`
+	Provider      string `json:"provider"`
+	Status        string `json:"status"`
+	Error         string `json:"error,omitempty"`
+}
+
+type Replica struct {
+	BackupID      string
+	DestinationID string
+	ObjectKey     string
+	Status        string
+	Error         string
+	SizeBytes     int64
+}
+
+type RemoteDelete struct {
+	DestinationID string
+	ObjectKey     string
 }
 
 type APIKey struct {
@@ -69,19 +110,20 @@ type APIKey struct {
 }
 
 type Backup struct {
-	ID          string `json:"id"`
-	ProjectID   string `json:"project_id"`
-	ProjectName string `json:"project_name,omitempty"`
-	Name        string `json:"name"`
-	Filename    string `json:"filename"`
-	Kind        string `json:"kind"`
-	Source      string `json:"source"`
-	Note        string `json:"note"`
-	Tags        string `json:"tags"`
-	SizeBytes   int64  `json:"size_bytes"`
-	Checksum    string `json:"checksum_sha256"`
-	ContentType string `json:"content_type"`
-	CreatedAt   string `json:"created_at"`
+	ID          string       `json:"id"`
+	ProjectID   string       `json:"project_id"`
+	ProjectName string       `json:"project_name,omitempty"`
+	Name        string       `json:"name"`
+	Filename    string       `json:"filename"`
+	Kind        string       `json:"kind"`
+	Source      string       `json:"source"`
+	Note        string       `json:"note"`
+	Tags        string       `json:"tags"`
+	SizeBytes   int64        `json:"size_bytes"`
+	Checksum    string       `json:"checksum_sha256"`
+	ContentType string       `json:"content_type"`
+	CreatedAt   string       `json:"created_at"`
+	Copies      []BackupCopy `json:"copies,omitempty"`
 }
 
 type Webhook struct {
@@ -152,8 +194,25 @@ func Open(dataDir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	s := &Store{db: db, blobs: blobRoot}
 	return s, nil
+}
+
+func migrate(db *sql.DB) error {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('projects') WHERE name = 'destination_id'`).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		if _, err := db.Exec(`ALTER TABLE projects ADD COLUMN destination_id TEXT`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -347,14 +406,14 @@ func (s *Store) decorateProject(ctx context.Context, p *Project) error {
 }
 
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, slug, description, status, retention_count, retention_days, quota_bytes, created_at, updated_at FROM projects ORDER BY name COLLATE NOCASE`)
+	rows, err := s.db.QueryContext(ctx, projectSelect+` ORDER BY p.name COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
 	}
 	var out []Project
 	for rows.Next() {
-		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &p.RetentionCount, &p.RetentionDays, &p.QuotaBytes, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		p, err := scanProject(rows)
+		if err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -373,10 +432,16 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	return out, nil
 }
 
-func (s *Store) GetProject(ctx context.Context, projectID string) (Project, error) {
+const projectSelect = `SELECT p.id, p.name, p.slug, p.description, p.status, p.retention_count, p.retention_days, p.quota_bytes, COALESCE(p.destination_id, ''), COALESCE(d.name, ''), p.created_at, p.updated_at FROM projects p LEFT JOIN destinations d ON d.id = p.destination_id`
+
+func scanProject(row interface{ Scan(dest ...any) error }) (Project, error) {
 	var p Project
-	err := s.db.QueryRowContext(ctx, `SELECT id, name, slug, description, status, retention_count, retention_days, quota_bytes, created_at, updated_at FROM projects WHERE id = ?`, projectID).
-		Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &p.RetentionCount, &p.RetentionDays, &p.QuotaBytes, &p.CreatedAt, &p.UpdatedAt)
+	err := row.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &p.RetentionCount, &p.RetentionDays, &p.QuotaBytes, &p.DestinationID, &p.DestinationName, &p.CreatedAt, &p.UpdatedAt)
+	return p, err
+}
+
+func (s *Store) GetProject(ctx context.Context, projectID string) (Project, error) {
+	p, err := scanProject(s.db.QueryRowContext(ctx, projectSelect+` WHERE p.id = ?`, projectID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Project{}, ErrNotFound
 	}
@@ -391,8 +456,12 @@ func (s *Store) GetProject(ctx context.Context, projectID string) (Project, erro
 
 func (s *Store) UpdateProject(ctx context.Context, p Project) (Project, error) {
 	p.UpdatedAt = Now()
-	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ?, description = ?, status = ?, retention_count = ?, retention_days = ?, quota_bytes = ?, updated_at = ? WHERE id = ?`,
-		strings.TrimSpace(p.Name), strings.TrimSpace(p.Description), p.Status, p.RetentionCount, p.RetentionDays, p.QuotaBytes, p.UpdatedAt, p.ID)
+	var destination any
+	if strings.TrimSpace(p.DestinationID) != "" {
+		destination = strings.TrimSpace(p.DestinationID)
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE projects SET name = ?, description = ?, status = ?, retention_count = ?, retention_days = ?, quota_bytes = ?, destination_id = ?, updated_at = ? WHERE id = ?`,
+		strings.TrimSpace(p.Name), strings.TrimSpace(p.Description), p.Status, p.RetentionCount, p.RetentionDays, p.QuotaBytes, destination, p.UpdatedAt, p.ID)
 	if err != nil {
 		return Project{}, err
 	}
@@ -408,13 +477,28 @@ func (s *Store) DeleteProject(ctx context.Context, projectID string) error {
 	if err != nil {
 		return err
 	}
-	res, err := s.db.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, projectID)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	pairs, err := remotePairs(ctx, tx, `SELECT DISTINCT r.destination_id, r.object_key FROM replicas r JOIN backups b ON b.id = r.backup_id WHERE b.project_id = ? AND r.status = 'synced'`, projectID)
+	if err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, projectID)
 	if err != nil {
 		return err
 	}
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return ErrNotFound
+	}
+	if err := queueIfUnreferenced(ctx, tx, pairs); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
 	}
 	for sum := range sums {
 		_ = s.releaseBlob(ctx, sum)
@@ -595,7 +679,13 @@ func (s *Store) ListBackups(ctx context.Context, f BackupFilter) ([]Backup, int,
 		}
 		out = append(out, b)
 	}
-	return out, total, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	if err := s.attachCopies(ctx, out); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
 }
 
 func scanBackup(row interface{ Scan(dest ...any) error }) (Backup, error) {
@@ -611,7 +701,14 @@ func (s *Store) GetBackup(ctx context.Context, backupID string) (Backup, error) 
 	if errors.Is(err, sql.ErrNoRows) {
 		return Backup{}, ErrNotFound
 	}
-	return b, err
+	if err != nil {
+		return Backup{}, err
+	}
+	one := []Backup{b}
+	if err := s.attachCopies(ctx, one); err != nil {
+		return Backup{}, err
+	}
+	return one[0], nil
 }
 
 func (s *Store) DeleteBackup(ctx context.Context, backupID string) (Backup, error) {
@@ -619,7 +716,22 @@ func (s *Store) DeleteBackup(ctx context.Context, backupID string) (Backup, erro
 	if err != nil {
 		return Backup{}, err
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM backups WHERE id = ?`, backupID); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Backup{}, err
+	}
+	defer tx.Rollback()
+	pairs, err := remotePairs(ctx, tx, `SELECT destination_id, object_key FROM replicas WHERE backup_id = ? AND status = 'synced'`, backupID)
+	if err != nil {
+		return Backup{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM backups WHERE id = ?`, backupID); err != nil {
+		return Backup{}, err
+	}
+	if err := queueIfUnreferenced(ctx, tx, pairs); err != nil {
+		return Backup{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return Backup{}, err
 	}
 	_ = s.releaseBlob(ctx, b.Checksum)
@@ -962,4 +1074,266 @@ func escapeLike(s string) string {
 	s = strings.ReplaceAll(s, `%`, `\%`)
 	s = strings.ReplaceAll(s, `_`, `\_`)
 	return s
+}
+
+type queryer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func remotePairs(ctx context.Context, q queryer, query string, args ...any) ([][2]string, error) {
+	rows, err := q.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out [][2]string
+	for rows.Next() {
+		var pair [2]string
+		if err := rows.Scan(&pair[0], &pair[1]); err != nil {
+			return nil, err
+		}
+		out = append(out, pair)
+	}
+	return out, rows.Err()
+}
+
+func queueIfUnreferenced(ctx context.Context, q queryer, pairs [][2]string) error {
+	now := Now()
+	seen := map[[2]string]struct{}{}
+	for _, pair := range pairs {
+		if _, ok := seen[pair]; ok {
+			continue
+		}
+		seen[pair] = struct{}{}
+		var n int
+		if err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM replicas r
+			JOIN destinations d ON d.id = r.destination_id
+			JOIN destinations target ON target.id = ?
+			WHERE r.status = 'synced' AND r.object_key = ?
+			AND d.provider = target.provider AND d.account_id = target.account_id AND d.bucket = target.bucket`, pair[0], pair[1]).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			continue
+		}
+		if _, err := q.ExecContext(ctx, `INSERT OR IGNORE INTO remote_deletes (destination_id, object_key, created_at) VALUES (?, ?, ?)`, pair[0], pair[1], now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Store) attachCopies(ctx context.Context, items []Backup) error {
+	if len(items) == 0 {
+		return nil
+	}
+	args := make([]any, len(items))
+	marks := make([]string, len(items))
+	for i := range items {
+		args[i] = items[i].ID
+		marks[i] = "?"
+		items[i].Copies = nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT r.backup_id, r.destination_id, d.name, d.provider, r.status, r.error
+		FROM replicas r JOIN destinations d ON d.id = r.destination_id
+		WHERE r.backup_id IN (`+strings.Join(marks, ",")+`)`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	byID := map[string]int{}
+	for i := range items {
+		byID[items[i].ID] = i
+	}
+	for rows.Next() {
+		var backupID string
+		var copy BackupCopy
+		if err := rows.Scan(&backupID, &copy.DestinationID, &copy.Name, &copy.Provider, &copy.Status, &copy.Error); err != nil {
+			return err
+		}
+		if i, ok := byID[backupID]; ok {
+			items[i].Copies = append(items[i].Copies, copy)
+		}
+	}
+	return rows.Err()
+}
+
+func (s *Store) CreateDestination(ctx context.Context, d Destination) (Destination, error) {
+	d.ID = id.New("dst_")
+	d.CreatedAt = Now()
+	d.UpdatedAt = d.CreatedAt
+	_, err := s.db.ExecContext(ctx, `INSERT INTO destinations (id, name, provider, account_id, access_key_id, secret_access_key, bucket, jurisdiction, key_prefix, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.Name, d.Provider, d.AccountID, d.AccessKeyID, d.Secret, d.Bucket, d.Jurisdiction, d.KeyPrefix, d.CreatedAt, d.UpdatedAt)
+	if err != nil {
+		return Destination{}, err
+	}
+	d.Secret = ""
+	return s.GetDestination(ctx, d.ID)
+}
+
+func (s *Store) ListDestinations(ctx context.Context) ([]Destination, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, provider, account_id, access_key_id, bucket, jurisdiction, key_prefix, created_at, updated_at FROM destinations ORDER BY name COLLATE NOCASE`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Destination
+	for rows.Next() {
+		d, err := scanDestination(rows, false)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		used, err := s.DestinationUsage(ctx, out[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].UsedBytes = used
+	}
+	return out, nil
+}
+
+func scanDestination(row interface{ Scan(dest ...any) error }, withSecret bool) (Destination, error) {
+	var d Destination
+	var err error
+	if withSecret {
+		err = row.Scan(&d.ID, &d.Name, &d.Provider, &d.AccountID, &d.AccessKeyID, &d.Secret, &d.Bucket, &d.Jurisdiction, &d.KeyPrefix, &d.CreatedAt, &d.UpdatedAt)
+	} else {
+		err = row.Scan(&d.ID, &d.Name, &d.Provider, &d.AccountID, &d.AccessKeyID, &d.Bucket, &d.Jurisdiction, &d.KeyPrefix, &d.CreatedAt, &d.UpdatedAt)
+	}
+	return d, err
+}
+
+func (s *Store) GetDestination(ctx context.Context, destinationID string) (Destination, error) {
+	d, err := scanDestination(s.db.QueryRowContext(ctx, `SELECT id, name, provider, account_id, access_key_id, secret_access_key, bucket, jurisdiction, key_prefix, created_at, updated_at FROM destinations WHERE id = ?`, destinationID), true)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Destination{}, ErrNotFound
+	}
+	if err != nil {
+		return Destination{}, err
+	}
+	d.UsedBytes, err = s.DestinationUsage(ctx, d.ID)
+	return d, err
+}
+
+func (s *Store) DeleteDestination(ctx context.Context, destinationID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE projects SET destination_id = NULL, updated_at = ? WHERE destination_id = ?`, Now(), destinationID); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM destinations WHERE id = ?`, destinationID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit()
+}
+
+func (s *Store) DestinationUsage(ctx context.Context, destinationID string) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(size_bytes), 0) FROM (
+		SELECT MAX(size_bytes) AS size_bytes FROM replicas WHERE destination_id = ? AND status = 'synced' GROUP BY object_key
+	)`, destinationID).Scan(&n)
+	return n, err
+}
+
+// AccountUsage is the Standard storage Harbor has stored for one Cloudflare account.
+// The free 10 GB allowance is per account, so every bucket on that account counts.
+func (s *Store) AccountUsage(ctx context.Context, provider, accountID string) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(size_bytes), 0) FROM (
+		SELECT MAX(r.size_bytes) AS size_bytes
+		FROM replicas r JOIN destinations d ON d.id = r.destination_id
+		WHERE d.provider = ? AND d.account_id = ? AND r.status = 'synced'
+		GROUP BY d.bucket, r.object_key
+	)`, provider, accountID).Scan(&n)
+	return n, err
+}
+
+// RemoteObjectStored reports whether this exact bucket and key are already in R2.
+func (s *Store) RemoteObjectStored(ctx context.Context, d Destination, objectKey string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM replicas r
+		JOIN destinations d ON d.id = r.destination_id
+		WHERE r.status = 'synced' AND r.object_key = ?
+		AND d.provider = ? AND d.account_id = ? AND d.bucket = ?`,
+		objectKey, d.Provider, d.AccountID, d.Bucket).Scan(&n)
+	return n > 0, err
+}
+
+func (s *Store) ObjectSynced(ctx context.Context, destinationID, objectKey string) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM replicas WHERE destination_id = ? AND object_key = ? AND status = 'synced'`, destinationID, objectKey).Scan(&n)
+	return n > 0, err
+}
+
+func (s *Store) GetReplica(ctx context.Context, backupID, destinationID string) (Replica, error) {
+	var r Replica
+	err := s.db.QueryRowContext(ctx, `SELECT backup_id, destination_id, object_key, status, error, size_bytes FROM replicas WHERE backup_id = ? AND destination_id = ?`, backupID, destinationID).
+		Scan(&r.BackupID, &r.DestinationID, &r.ObjectKey, &r.Status, &r.Error, &r.SizeBytes)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Replica{}, ErrNotFound
+	}
+	return r, err
+}
+
+func (s *Store) UpsertReplica(ctx context.Context, backupID string, r Replica) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO replicas (id, backup_id, destination_id, object_key, status, error, size_bytes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(backup_id, destination_id) DO UPDATE SET object_key = excluded.object_key, status = excluded.status, error = excluded.error, size_bytes = excluded.size_bytes, updated_at = excluded.updated_at`,
+		id.New("rpl_"), backupID, r.DestinationID, r.ObjectKey, r.Status, r.Error, r.SizeBytes, Now())
+	return err
+}
+
+func (s *Store) ListProjectBackups(ctx context.Context, projectID string) ([]Backup, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT b.id, b.project_id, p.name, b.name, b.filename, b.kind, b.source, b.note, b.tags, b.size_bytes, b.checksum_sha256, b.content_type, b.created_at
+		FROM backups b JOIN projects p ON p.id = b.project_id WHERE b.project_id = ? ORDER BY b.created_at ASC, b.rowid ASC`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Backup
+	for rows.Next() {
+		b, err := scanBackup(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) ListRemoteDeletes(ctx context.Context) ([]RemoteDelete, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT destination_id, object_key FROM remote_deletes ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RemoteDelete
+	for rows.Next() {
+		var item RemoteDelete
+		if err := rows.Scan(&item.DestinationID, &item.ObjectKey); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) FinishRemoteDelete(ctx context.Context, destinationID, objectKey string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM remote_deletes WHERE destination_id = ? AND object_key = ?`, destinationID, objectKey)
+	return err
 }

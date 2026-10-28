@@ -9,6 +9,16 @@ import { useSearchParams } from "react-router-dom";
 
 const pageSize = 50;
 
+function copyLabel(backup: Backup) {
+  if (!backup.copies?.length) return "This machine";
+  const extra = backup.copies.map((copy) => {
+    if (copy.status === "synced") return copy.name;
+    if (copy.status === "skipped") return `${copy.name} (free limit)`;
+    return `${copy.name} (failed)`;
+  });
+  return `This machine + ${extra.join(", ")}`;
+}
+
 export default function BackupsPage() {
   const [params, setParams] = useSearchParams();
   const q = params.get("q") ?? "";
@@ -159,6 +169,7 @@ export default function BackupsPage() {
                 <th className="px-4 py-3 font-medium">Kind</th>
                 <th className="px-4 py-3 font-medium">Size</th>
                 <th className="px-4 py-3 font-medium">When</th>
+                <th className="px-4 py-3 font-medium">Where</th>
                 <th className="px-4 py-3 font-medium" />
               </tr>
             </thead>
@@ -173,6 +184,26 @@ export default function BackupsPage() {
                   <td className="px-4 py-3">{backup.kind}</td>
                   <td className="px-4 py-3">{formatBytes(backup.size_bytes)}</td>
                   <td className="px-4 py-3">{formatWhen(backup.created_at)}</td>
+                  <td className="px-4 py-3">
+                    <p>{copyLabel(backup)}</p>
+                    {backup.copies?.filter((copy) => copy.error).map((copy) => (
+                      <p key={copy.destination_id} className="mt-1 text-xs text-error-500">{copy.error}</p>
+                    ))}
+                    {backup.copies?.some((copy) => copy.status !== "synced") && (
+                      <button
+                        type="button"
+                        className={quietButtonClass}
+                        onClick={() => {
+                          setError(null);
+                          void api(`/api/v1/backups/${backup.id}/replicate`, { method: "POST" })
+                            .then(() => load())
+                            .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not copy backup"));
+                        }}
+                      >
+                        Copy again
+                      </button>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <button
                       type="button"

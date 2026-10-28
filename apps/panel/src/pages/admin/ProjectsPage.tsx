@@ -102,6 +102,7 @@ export default function ProjectsPage() {
                     <dd className="text-sm font-medium text-gray-900 dark:text-white">{formatBytes(project.used_bytes)}</dd>
                   </div>
                 </dl>
+                <p className="mt-3 text-xs text-gray-500">{project.destination_name ? `Also copies to ${project.destination_name}` : "This machine only"}</p>
               </div>
             </Link>
           ))}

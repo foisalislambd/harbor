@@ -18,6 +18,8 @@ export type Project = {
   quota_bytes: number;
   used_bytes: number;
   backup_count: number;
+  destination_id: string;
+  destination_name: string;
   created_at: string;
   updated_at: string;
 };
@@ -47,6 +49,45 @@ export type Backup = {
   checksum_sha256: string;
   content_type: string;
   created_at: string;
+  copies?: BackupCopy[];
+};
+
+export type BackupCopy = {
+  destination_id: string;
+  name: string;
+  provider: string;
+  status: "synced" | "failed" | "skipped" | string;
+  error?: string;
+};
+
+export type Destination = {
+  id: string;
+  name: string;
+  provider: string;
+  account_id: string;
+  access_key_id: string;
+  bucket: string;
+  jurisdiction: string;
+  key_prefix: string;
+  used_bytes: number;
+  account_used_bytes: number;
+  free_storage_bytes: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DestinationList = {
+  items: Destination[];
+  free_storage_bytes: number;
+  free_class_a: number;
+  free_class_b: number;
+};
+
+export type ReplicateResult = {
+  copied: number;
+  failed: number;
+  skipped: number;
+  already: number;
 };
 
 export type Webhook = {

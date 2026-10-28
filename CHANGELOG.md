@@ -4,6 +4,12 @@ All notable changes to Harbor are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Cloudflare R2 as a backup destination. Backups stay on this machine, and a project can also keep a second copy in R2's free Standard storage (10 GB).
+
 ## [0.1.1] - 2026-10-16
 
 ### Added

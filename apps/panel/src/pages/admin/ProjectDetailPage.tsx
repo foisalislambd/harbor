@@ -7,7 +7,10 @@ import {
   formatWhen,
   type ApiKey,
   type Backup,
+  type Destination,
+  type DestinationList,
   type Project,
+  type ReplicateResult,
   type Schedule,
   type Webhook,
 } from "@/lib/harbor-api";
@@ -28,20 +31,27 @@ export default function ProjectDetailPage() {
   const [hookUrl, setHookUrl] = useState("");
   const [scheduleName, setScheduleName] = useState("nightly");
   const [intervalHours, setIntervalHours] = useState(24);
+  const [destinations, setDestinations] = useState<Destination[]>([]);
+  const [savedDestination, setSavedDestination] = useState("");
+  const [copying, setCopying] = useState(false);
+  const [copyNote, setCopyNote] = useState<string | null>(null);
 
   async function load() {
-    const [projectRes, keyRes, hookRes, scheduleRes, backupRes] = await Promise.all([
+    const [projectRes, keyRes, hookRes, scheduleRes, backupRes, destinationRes] = await Promise.all([
       api<Project>(`/api/v1/projects/${projectId}`),
       api<{ items: ApiKey[] }>(`/api/v1/projects/${projectId}/keys`),
       api<{ items: Webhook[] }>(`/api/v1/projects/${projectId}/webhooks`),
       api<{ items: Schedule[] }>(`/api/v1/projects/${projectId}/schedules`),
       api<{ items: Backup[] }>(`/api/v1/backups?project_id=${projectId}&limit=8`),
+      api<DestinationList>("/api/v1/destinations"),
     ]);
     setProject(projectRes);
+    setSavedDestination(projectRes.destination_id || "");
     setKeys(keyRes.items);
     setHooks(hookRes.items);
     setSchedules(scheduleRes.items);
     setBackups(backupRes.items);
+    setDestinations(destinationRes.items);
   }
 
   useEffect(() => {
@@ -62,9 +72,11 @@ export default function ProjectDetailPage() {
           retention_count: Number(project.retention_count),
           retention_days: Number(project.retention_days),
           quota_bytes: Number(project.quota_bytes),
+          destination_id: project.destination_id,
         }),
       });
       setProject(updated);
+      setSavedDestination(updated.destination_id || "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save");
     }
@@ -154,11 +166,69 @@ export default function ProjectDetailPage() {
               onChange={(e) => setProject({ ...project, quota_bytes: Math.round(Number(e.target.value) * 1024 ** 3) })}
             />
           </label>
+          <label className="block md:col-span-2">
+            <span className={labelClass}>Backup destination</span>
+            <select
+              className={fieldClass}
+              value={project.destination_id || ""}
+              onChange={(e) => {
+                const destination = destinations.find((item) => item.id === e.target.value);
+                setProject({ ...project, destination_id: e.target.value, destination_name: destination?.name || "" });
+              }}
+            >
+              <option value="">This machine only</option>
+              {destinations.map((destination) => (
+                <option key={destination.id} value={destination.id}>{destination.name} · Cloudflare R2</option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-xs text-gray-500">
+              Backups stay on this machine either way. Pick Cloudflare to also keep a second copy. Add it on the{" "}
+              <Link to="/destinations" className="font-medium text-brand-600">Destinations</Link> page.
+            </p>
+          </label>
           <div className="flex items-end">
             <button className={primaryButtonClass} type="submit">Save project</button>
           </div>
         </div>
       </form>
+
+      {savedDestination && (
+        <section className="admin-card">
+          <div className="admin-card-body space-y-3">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Copy stored backups</h2>
+            <p className="text-sm text-gray-500">
+              New backups are copied when they arrive. This sends the ones already stored on this machine to {project.destination_name || "the selected destination"}.
+            </p>
+            {project.destination_id !== savedDestination && (
+              <p className="text-sm text-gray-500">Save the project first so this uses the destination you just chose.</p>
+            )}
+            <button
+              type="button"
+              className={quietButtonClass}
+              disabled={copying || project.destination_id !== savedDestination}
+              onClick={() => {
+                setCopying(true);
+                setCopyNote(null);
+                setError(null);
+                void api<ReplicateResult>(`/api/v1/projects/${project.id}/replicate`, { method: "POST" })
+                  .then((result) => {
+                    const parts = [`${result.copied} copied`];
+                    if (result.already) parts.push(`${result.already} already there`);
+                    if (result.skipped) parts.push(`${result.skipped} stayed local because free storage is full`);
+                    if (result.failed) parts.push(`${result.failed} failed`);
+                    setCopyNote(parts.join(", ") + ".");
+                    return load();
+                  })
+                  .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not copy backups"))
+                  .finally(() => setCopying(false));
+              }}
+            >
+              {copying ? "Copying…" : "Copy stored backups"}
+            </button>
+            {copyNote && <p className="text-sm text-gray-600 dark:text-gray-300">{copyNote}</p>}
+          </div>
+        </section>
+      )}
 
       <section className="admin-card">
         <div className="admin-card-body space-y-4">
