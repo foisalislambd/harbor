@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-28
+
 ### Added
 
 - Object storage destinations. Backups stay on this machine, and a project can also keep a second copy. Cloudflare R2 and Backblaze B2 stay inside the 10 GB free allowance unless that is turned off. Other S3-compatible services can be added from the same page.
