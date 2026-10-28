@@ -26,7 +26,7 @@ export function AdminDashboardLayout() {
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <AdminHeader />
           <main className="admin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <div className="w-full px-4 py-3 sm:px-5">
+            <div className="w-full px-2 py-3 sm:px-3">
               <Outlet />
             </div>
           </main>
