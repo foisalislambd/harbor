@@ -1,6 +1,7 @@
 import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
+import { ProviderLogo } from "@/components/provider-logo";
 import { dangerButtonClass, fieldClass, labelClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
 import { api, formatBytes, type Destination, type DestinationList, type StorageProvider, type StorageProviderList } from "@/lib/harbor-api";
 import { Cloud } from "lucide-react";
@@ -92,22 +93,32 @@ export default function DestinationsPage() {
             Harbor checks the bucket before saving. Consumer drives such as Google Drive, Dropbox, and OneDrive are not listed, because they need a different sign-in than a bucket key.
           </p>
           <form onSubmit={createDestination} className="grid gap-4 md:grid-cols-2">
-            <label className="block md:col-span-2">
+            <div className="space-y-4 md:col-span-2">
               <span className={labelClass}>Service</span>
-              <select
-                className={fieldClass}
-                value={form.provider}
-                onChange={(e) => setForm({ ...form, provider: e.target.value, allow_over_free: false })}
-              >
-                {groups.map((group) => (
-                  <optgroup key={group.group} label={group.group}>
-                    {group.items.map((provider) => (
-                      <option key={provider.id} value={provider.id}>{provider.name}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            </label>
+              {groups.map((group) => (
+                <div key={group.group}>
+                  <p className="mb-2 text-sm text-gray-500">{group.group}</p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+                    {group.items.map((provider) => {
+                      const active = form.provider === provider.id;
+                      return (
+                        <button
+                          key={provider.id}
+                          type="button"
+                          onClick={() => setForm({ ...form, provider: provider.id, allow_over_free: false })}
+                          className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left ${active ? "border-brand-500 bg-brand-50 ring-2 ring-brand-500/20 dark:bg-brand-500/10" : "border-gray-200 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-white/5"}`}
+                        >
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white">
+                            <ProviderLogo id={provider.id} />
+                          </span>
+                          <span className="min-w-0 truncate text-sm font-medium text-gray-800 dark:text-gray-100">{provider.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
             {selected && (
               <div className="space-y-2 md:col-span-2">
                 <p className="text-sm text-gray-600 dark:text-gray-300">{selected.summary}</p>
@@ -193,9 +204,14 @@ export default function DestinationsPage() {
               <article key={destination.id} className="admin-card">
                 <div className="admin-card-body space-y-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-base font-semibold text-gray-900 dark:text-white">{destination.name}</h2>
-                      <p className="text-sm text-gray-500">{destination.provider_name || destination.provider} · {where}</p>
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white">
+                        <ProviderLogo id={destination.provider} className="h-8 w-8" />
+                      </span>
+                      <div>
+                        <h2 className="text-base font-semibold text-gray-900 dark:text-white">{destination.name}</h2>
+                        <p className="text-sm text-gray-500">{destination.provider_name || destination.provider} · {where}</p>
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <button

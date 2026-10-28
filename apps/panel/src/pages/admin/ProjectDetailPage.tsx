@@ -1,4 +1,5 @@
 import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
+import { ProviderLogo } from "@/components/provider-logo";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { dangerButtonClass, fieldClass, labelClass, primaryButtonClass, quietButtonClass, solidDangerButtonClass } from "@/lib/fields";
 import {
@@ -168,6 +169,12 @@ export default function ProjectDetailPage() {
           </label>
           <label className="block md:col-span-2">
             <span className={labelClass}>Backup destination</span>
+            <div className="flex items-center gap-2">
+              {destinations.find((item) => item.id === project.destination_id) && (
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white dark:border-gray-700">
+                  <ProviderLogo id={destinations.find((item) => item.id === project.destination_id)!.provider} />
+                </span>
+              )}
             <select
               className={fieldClass}
               value={project.destination_id || ""}
@@ -181,6 +188,7 @@ export default function ProjectDetailPage() {
                 <option key={destination.id} value={destination.id}>{destination.name} · {destination.provider_name || destination.provider}</option>
               ))}
             </select>
+            </div>
             <p className="mt-1.5 text-xs text-gray-500">
               Backups stay on this machine either way. Pick a destination to also keep a second copy. Add one on the{" "}
               <Link to="/destinations" className="font-medium text-brand-600">Destinations</Link> page.
