@@ -61,11 +61,11 @@ export function AdminLoginForm() {
         <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-[1.75rem]">
           {needsSetup ? "Create the owner account" : "Sign in"}
         </h1>
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-          {needsSetup
-            ? "This Harbor instance has no users yet. The first account owns the vault."
-            : "Open the vault that stores backups from all of your applications."}
-        </p>
+        {needsSetup && (
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            This Harbor instance has no users yet. The first account owns the vault.
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-5">
           {needsSetup && (
@@ -89,6 +89,7 @@ export function AdminLoginForm() {
                 id="email"
                 type="email"
                 autoComplete="username"
+                placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -106,6 +107,7 @@ export function AdminLoginForm() {
                 id="password"
                 type={showPassword ? "text" : "password"}
                 autoComplete={needsSetup ? "new-password" : "current-password"}
+                placeholder="At least 8 characters"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
