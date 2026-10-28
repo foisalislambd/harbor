@@ -3,7 +3,11 @@ package config
 import "testing"
 
 func TestVersionComesFromVersionFile(t *testing.T) {
-	if Version != "0.1.2" {
-		t.Fatalf("version %q, want the number in VERSION.md", Version)
+	want := versionFromFile()
+	if want == "" {
+		t.Fatal("VERSION.md was not found from the test working directory")
+	}
+	if Version != want {
+		t.Fatalf("version %q, want %q from VERSION.md", Version, want)
 	}
 }
