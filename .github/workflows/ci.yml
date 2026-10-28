@@ -46,9 +46,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python .github/scripts/should_release.py
-      - name: Check the server version matches VERSION.md
-        if: steps.version.outputs.publish == 'true'
-        run: grep -q "var Version = \"${{ steps.version.outputs.version }}\"" apps/server/internal/config/config.go
       - uses: actions/setup-go@v7
         if: steps.version.outputs.publish == 'true'
         with:

@@ -3,12 +3,76 @@ package config
 import (
 	"flag"
 	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
 	"strconv"
+	"strings"
 	"time"
 )
 
-// Version is the release in VERSION.md. Release builds override it with -ldflags.
-var Version = "0.1.2"
+// Version is the number in VERSION.md. Release builds set it with -ldflags
+// from that same file. A local run reads the file when no flag was passed.
+var Version = ""
+
+func init() {
+	if Version != "" {
+		return
+	}
+	if v := versionFromFile(); v != "" {
+		Version = v
+		return
+	}
+	Version = "dev"
+}
+
+var versionLine = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+func versionFromFile() string {
+	starts := make([]string, 0, 3)
+	if wd, err := os.Getwd(); err == nil {
+		starts = append(starts, wd)
+	}
+	if exe, err := os.Executable(); err == nil {
+		starts = append(starts, filepath.Dir(exe))
+	}
+	if _, file, _, ok := runtime.Caller(0); ok {
+		starts = append(starts, filepath.Dir(file))
+	}
+	seen := map[string]struct{}{}
+	for _, start := range starts {
+		dir := start
+		for range 8 {
+			if _, ok := seen[dir]; ok {
+				break
+			}
+			seen[dir] = struct{}{}
+			if v := parseVersionFile(filepath.Join(dir, "VERSION.md")); v != "" {
+				return v
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+			dir = parent
+		}
+	}
+	return ""
+}
+
+func parseVersionFile(path string) string {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if versionLine.MatchString(line) {
+			return line
+		}
+	}
+	return ""
+}
 
 type Config struct {
 	Addr         string

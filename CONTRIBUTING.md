@@ -36,7 +36,7 @@ The panel is at http://127.0.0.1:5173 and proxies `/api` to port 8787. The first
 
 ## Releases
 
-The version line in `VERSION.md` is `major.minor.patch`. Set the same value on `Version` in `apps/server/internal/config/config.go`, and add a matching section to `CHANGELOG.md`. Pushing that higher number to `main` builds the panel into the release binaries, pushes `ghcr.io/foisalislambd/harbor:<version>` and `foisalislambd/harbor:<version>` (and `:latest` on both), and opens a GitHub release. An equal or lower number is skipped. Docker Hub login uses the `DOCKERHUB_TOKEN` repository secret.
+`VERSION.md` contains only `major.minor.patch`. The running app, the release binaries, and the Docker image use that number. Add a matching section to `CHANGELOG.md`. Pushing that higher number to `main` builds the panel into the release binaries, pushes `ghcr.io/foisalislambd/harbor:<version>` and `foisalislambd/harbor:<version>` (and `:latest` on both), and opens a GitHub release. An equal or lower number is skipped. Docker Hub login uses the `DOCKERHUB_TOKEN` repository secret.
 
 `harbor` opens the desktop window. `harbor serve` is the headless server. A local desktop build needs a panel first:
 
