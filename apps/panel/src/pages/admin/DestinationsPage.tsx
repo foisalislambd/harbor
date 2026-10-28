@@ -46,8 +46,8 @@ export default function DestinationsPage() {
   if (!items && !error) return <AdminLoading message="Loading destinations…" />;
 
   return (
-    <div className="admin-content space-y-6">
-      <AdminPageHeader title="Destinations" />
+    <div className="admin-content space-y-3">
+      <AdminPageHeader compact title="Destinations" />
       {error && <p className="text-sm text-error-500">{error}</p>}
       {message && <p className="text-sm text-success-600">{message}</p>}
 

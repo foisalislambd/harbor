@@ -65,10 +65,11 @@ export default function DestinationNewPage() {
   if (!provider && !missing && !error) return <AdminLoading message="Loading service…" />;
 
   return (
-    <div className="admin-content space-y-6">
+    <div className="admin-content space-y-3">
       <AdminPageHeader
+        compact
         title={provider?.name || "Service"}
-        actions={<Link to="/destinations" className={quietButtonClass}>All services</Link>}
+        actions={<Link to="/destinations" className={`${quietButtonClass} h-8 px-3 text-xs`}>All services</Link>}
       />
       {missing && <p className="text-sm text-error-500">That storage service is not available.</p>}
       {error && <p className="text-sm text-error-500">{error}</p>}
