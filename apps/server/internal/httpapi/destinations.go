@@ -45,8 +45,7 @@ func (a *API) listProviders(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
 	var body destinationBody
-	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !readJSON(w, r, &body) {
 		return
 	}
 	dest, err := normalizeDestination(body, true)

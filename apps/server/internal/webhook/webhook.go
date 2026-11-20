@@ -26,7 +26,12 @@ func Dispatch(targets []Target, event string, data any) {
 	if err != nil {
 		return
 	}
-	client := &http.Client{Timeout: 8 * time.Second}
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	for _, t := range targets {
 		if !wants(t.Events, event) {
 			continue

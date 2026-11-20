@@ -25,7 +25,7 @@ cd apps/panel
 npm run dev
 ```
 
-The panel is at http://127.0.0.1:5173 and proxies `/api` to port 8787. The first account created in the panel is the owner.
+The panel is at http://127.0.0.1:5173 and proxies `/api` to port 8787. An empty data directory shows the owner setup form. The first account created there owns the vault.
 
 ## What to change
 
@@ -53,4 +53,4 @@ go build -o harbor ./cmd/harbor
 
 ## Pull requests
 
-Describe the behavior you changed and how you checked it. Keep the change focused on one thing. The CI workflow runs `go test ./...` and the panel typecheck.
+Describe the behavior you changed and how you checked it. Keep the change focused on one thing. CI runs `gofmt`, `go vet`, `go test ./...`, the panel typecheck, and `npm run lint`.

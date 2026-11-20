@@ -1,20 +1,10 @@
-# ZenPanel (React)
+# Harbor panel
 
-Admin UI shell for React + Vite + React Router + Tailwind.
-
-## Scripts
+React panel for Harbor. Routes live at `/`. The API is proxied to `127.0.0.1:8787` in development.
 
 ```bash
-npm install
+npm ci
 npm run dev
-npm run build
-npm run lint
 ```
 
-Open [http://localhost:5173/admin/login](http://localhost:5173/admin/login).
-
-Preview credentials: `admin` / `admin`.
-
-## Customize
-
-Edit `src/config/admin.config.ts` for branding and sidebar navigation.
+Open http://127.0.0.1:5173. An empty data directory shows the owner setup form. See the repository README for the server, configuration, and screenshots.

@@ -175,14 +175,18 @@ type Stats struct {
 }
 
 func Open(dataDir string) (*Store, error) {
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+	tightenProcessUmask()
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(dataDir, 0o700); err != nil {
 		return nil, err
 	}
 	blobRoot := filepath.Join(dataDir, "blobs")
-	if err := os.MkdirAll(blobRoot, 0o755); err != nil {
+	if err := os.MkdirAll(blobRoot, 0o700); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Join(dataDir, "tmp"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dataDir, "tmp"), 0o700); err != nil {
 		return nil, err
 	}
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)", filepath.Join(dataDir, "harbor.db"))
@@ -201,6 +205,7 @@ func Open(dataDir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	_ = os.Chmod(filepath.Join(dataDir, "harbor.db"), 0o600)
 	s := &Store{db: db, blobs: blobRoot}
 	return s, nil
 }
@@ -395,6 +400,13 @@ func (s *Store) UserBySession(ctx context.Context, raw string) (User, error) {
 
 func (s *Store) DeleteSession(ctx context.Context, raw string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = ?`, id.HashToken(raw))
+	return err
+}
+
+// DeleteOtherSessions drops every session for the user except the one presented
+// as keepRaw. Password changes use this so a stolen cookie stops working.
+func (s *Store) DeleteOtherSessions(ctx context.Context, userID, keepRaw string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ? AND token_hash != ?`, userID, id.HashToken(keepRaw))
 	return err
 }
 

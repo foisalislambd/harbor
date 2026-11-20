@@ -14,6 +14,11 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: apps/server/go.mod
+      - name: Vet and format
+        working-directory: apps/server
+        run: |
+          go vet ./...
+          test -z "$(gofmt -l .)"
       - name: Test
         working-directory: apps/server
         run: go test ./...
@@ -30,7 +35,7 @@ jobs:
           cache-dependency-path: apps/panel/package-lock.json
       - name: Install and typecheck
         working-directory: apps/panel
-        run: npm ci && npx tsc -b --pretty false
+        run: npm ci && npx tsc -b --pretty false && npm run lint
 
   release:
     name: Release and Docker image
