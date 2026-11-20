@@ -59,6 +59,7 @@ export default function SettingsPage() {
           className="admin-card"
           onSubmit={(e) => {
             e.preventDefault();
+            if (!isOwner) return;
             setError(null);
             void api("/api/v1/settings", {
               method: "PUT",
@@ -72,12 +73,12 @@ export default function SettingsPage() {
             <h2 className="text-base font-semibold text-gray-900 dark:text-white">Instance</h2>
             <label className="block max-w-md">
               <span className={labelClass}>Name</span>
-              <input className={fieldClass} value={settings.instance_name} onChange={(e) => setSettings({ ...settings, instance_name: e.target.value })} />
+              <input className={fieldClass} value={settings.instance_name} onChange={(e) => setSettings({ ...settings, instance_name: e.target.value })} readOnly={!isOwner} />
             </label>
             <p className="text-sm text-gray-500">
               Version {settings.version} · data directory {settings.data_dir} · max upload {formatBytes(settings.max_upload_bytes)}
             </p>
-            <button className={primaryButtonClass} type="submit">Save</button>
+            {isOwner && <button className={primaryButtonClass} type="submit">Save</button>}
           </div>
         </form>
       )}

@@ -44,6 +44,19 @@ func (l *attemptLimiter) recordFailure(key string, now time.Time) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if len(l.failures) >= 4096 {
+		for existing, state := range l.failures {
+			if now.Sub(state.start) > l.window {
+				delete(l.failures, existing)
+			}
+		}
+	}
+	if len(l.failures) >= 4096 {
+		for existing := range l.failures {
+			delete(l.failures, existing)
+			break
+		}
+	}
 	state, ok := l.failures[key]
 	if !ok || now.Sub(state.start) > l.window {
 		l.failures[key] = attemptState{count: 1, start: now}

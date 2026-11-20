@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- Destination secrets and webhook signing secrets are encrypted at rest with AES-256-GCM. The key is `secret.key` in the data directory, or `HARBOR_SECRET_KEY` (64 hex characters or base64 of 32 bytes) when that file does not exist yet. An existing key file is kept even if the environment variable is also set. Plaintext rows from an older install are sealed the next time Harbor opens the database.
+- Webhook signing secrets are returned once, when the webhook is created. Listing webhooks no longer includes them.
+- Cookie-authenticated changes, including the first setup and sign-in, require the header `X-Harbor-Request: 1`. Requests that send only a Bearer API key do not.
+- Only the owner can add, test, or remove destinations, or rename the instance. Operators can still manage projects and backups.
+- Webhook URLs and custom storage endpoints cannot point at a link-local or cloud metadata address. Ordinary private addresses, including MinIO on the same machine or LAN, still work. Webhook requests do not use an HTTP proxy.
+- Backup downloads are sent as `application/octet-stream`.
+- The audit log keeps the newest 10,000 rows. Sign-in lockouts keep a bounded number of addresses. A `?` in the data directory path cannot change SQLite pragmas.
+- A project quota check no longer wraps past the size of a 64-bit integer.
+- CI pins GitHub Actions by commit and gives the test jobs read-only contents permission. `govulncheck` and `npm audit` run in CI.
 - A new data directory no longer signs in as `admin@harbor.local` / `admin@123456`. The first visit creates the owner. An existing install that still has that password logs a warning at startup.
 - Sign-in and password changes lock for 15 minutes after 8 failed attempts from the same address or email.
 - Changing a password revokes every other session.

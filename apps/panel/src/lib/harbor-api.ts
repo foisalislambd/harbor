@@ -170,6 +170,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  headers.set("X-Harbor-Request", "1");
   const res = await fetch(path, { ...init, headers, credentials: "include" });
   if (res.status === 204) return undefined as T;
   const text = await res.text();

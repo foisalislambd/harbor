@@ -36,6 +36,7 @@ func TestSecurityHeadersAndJSONLimit(t *testing.T) {
 	payload := []byte(`{"email":"` + strings.Repeat("a", maxJSONBody) + `","password":"correct-horse"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Harbor-Request", "1")
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, req)
 	if res.Code != http.StatusRequestEntityTooLarge {
@@ -122,6 +123,91 @@ func TestUserResponseOmitsPassword(t *testing.T) {
 	}
 	if _, ok := payload.User["password"]; ok {
 		t.Fatalf("password leaked: %s", setup.Body.String())
+	}
+}
+
+func TestCookieMutationRequiresBrowserHeader(t *testing.T) {
+	handler := newTestAPI(t).Handler()
+	body := []byte(`{"name":"Ada","email":"ada@example.com","password":"correct-horse"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/setup", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("setup without header %d %s", res.Code, res.Body.String())
+	}
+}
+
+func TestWebhookSecretIsShownOnce(t *testing.T) {
+	handler := newTestAPI(t).Handler()
+	setup := postJSON(t, handler, "/api/v1/setup", map[string]string{
+		"name": "Ada", "email": "ada@example.com", "password": "correct-horse",
+	}, "")
+	project := postJSON(t, handler, "/api/v1/projects", map[string]any{"name": "Hooks"}, cookie(setup))
+	var created store.Project
+	if err := json.Unmarshal(project.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	made := postJSON(t, handler, "/api/v1/projects/"+created.ID+"/webhooks", map[string]string{
+		"url": "https://example.com/hooks/harbor",
+	}, cookie(setup))
+	if made.Code != http.StatusCreated {
+		t.Fatalf("create %d %s", made.Code, made.Body.String())
+	}
+	var hook store.Webhook
+	if err := json.Unmarshal(made.Body.Bytes(), &hook); err != nil {
+		t.Fatal(err)
+	}
+	if hook.Secret == "" {
+		t.Fatal("create should return the signing secret once")
+	}
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+created.ID+"/webhooks", nil)
+	listReq.Header.Set("Cookie", cookie(setup))
+	list := httptest.NewRecorder()
+	handler.ServeHTTP(list, listReq)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list %d %s", list.Code, list.Body.String())
+	}
+	if bytes.Contains(list.Body.Bytes(), []byte(hook.Secret)) {
+		t.Fatalf("list returned the signing secret: %s", list.Body.String())
+	}
+	blocked := postJSON(t, handler, "/api/v1/projects/"+created.ID+"/webhooks", map[string]string{
+		"url": "http://169.254.169.254/latest/meta-data",
+	}, cookie(setup))
+	if blocked.Code != http.StatusBadRequest {
+		t.Fatalf("metadata webhook %d %s", blocked.Code, blocked.Body.String())
+	}
+}
+
+func TestOperatorCannotChangeDestinations(t *testing.T) {
+	handler := newTestAPI(t).Handler()
+	setup := postJSON(t, handler, "/api/v1/setup", map[string]string{
+		"name": "Ada", "email": "ada@example.com", "password": "correct-horse",
+	}, "")
+	operator := postJSON(t, handler, "/api/v1/users", map[string]string{
+		"name": "Op", "email": "op@example.com", "password": "correct-horse",
+	}, cookie(setup))
+	if operator.Code != http.StatusCreated {
+		t.Fatalf("user %d %s", operator.Code, operator.Body.String())
+	}
+	login := postJSON(t, handler, "/api/v1/auth/login", map[string]string{
+		"email": "op@example.com", "password": "correct-horse",
+	}, "")
+	res := postJSON(t, handler, "/api/v1/destinations", map[string]any{
+		"name": "Local", "provider": "minio", "access_key_id": "access-key",
+		"secret_access_key": "secret-key", "bucket": "backups", "endpoint": "http://127.0.0.1:9000",
+	}, cookie(login))
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("operator destination %d %s", res.Code, res.Body.String())
+	}
+	settingsReq := httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(`{"instance_name":"Taken"}`))
+	settingsReq.Header.Set("Content-Type", "application/json")
+	settingsReq.Header.Set("X-Harbor-Request", "1")
+	settingsReq.Header.Set("Cookie", cookie(login))
+	settings := httptest.NewRecorder()
+	handler.ServeHTTP(settings, settingsReq)
+	if settings.Code != http.StatusForbidden {
+		t.Fatalf("operator settings %d %s", settings.Code, settings.Body.String())
 	}
 }
 

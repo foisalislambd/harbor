@@ -1,3 +1,4 @@
+import { useAdminAuth } from "@/components/admin/auth/admin-auth-provider";
 import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
@@ -14,6 +15,8 @@ function formatCap(bytes: number) {
 }
 
 export default function DestinationsPage() {
+  const { admin } = useAdminAuth();
+  const isOwner = admin?.role === "owner";
   const location = useLocation();
   const [items, setItems] = useState<Destination[] | null>(null);
   const [providers, setProviders] = useState<StorageProvider[]>([]);
@@ -70,6 +73,7 @@ export default function DestinationsPage() {
       {error && <p className="text-sm text-error-500">{error}</p>}
       {message && <p className="text-sm text-success-600">{message}</p>}
 
+      {isOwner ? (
       <section className="admin-card">
         <div className="admin-card-body space-y-4">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">Add storage</h2>
@@ -96,6 +100,9 @@ export default function DestinationsPage() {
           </div>
         </div>
       </section>
+      ) : (
+        <p className="text-sm text-gray-500">Only the owner can add or remove destinations.</p>
+      )}
 
       {items && items.length === 0 ? (
         <div className="admin-card">
@@ -121,6 +128,7 @@ export default function DestinationsPage() {
                         <p className="text-sm text-gray-500">{destination.provider_name || destination.provider} · {where}</p>
                       </div>
                     </div>
+                    {isOwner && (
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -149,6 +157,7 @@ export default function DestinationsPage() {
                         Remove
                       </button>
                     </div>
+                    )}
                   </div>
                   {limit > 0 && !destination.allow_over_free && (
                     <>

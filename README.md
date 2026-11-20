@@ -129,6 +129,7 @@ go run ./cmd/harbor serve -addr 127.0.0.1:8787 -data data -panel ../panel/dist
 | `HARBOR_COOKIE_SECURE` | empty | Set to `1` behind HTTPS so the session cookie is `Secure`. |
 | `HARBOR_CORS_ORIGIN` | empty | Exact origin, such as `https://panel.example.com`, when the panel is on another host. A path is rejected at startup. |
 | `HARBOR_TRUST_PROXY` | empty | Set to `1` only when a reverse proxy is the only client. Harbor then trusts `X-Forwarded-For` for rate limits and request logs. |
+| `HARBOR_SECRET_KEY` | empty | 32-byte key as 64 hex characters or base64. Used only when `secret.key` is not already in the data directory. Back this up outside the volume if you set it. |
 | `HARBOR_ENDPOINT` | `http://127.0.0.1:8787` | Default server for `harbor push`. |
 | `HARBOR_TOKEN` | empty | Default project API key for `harbor push`. |
 
@@ -187,7 +188,7 @@ HARBOR_COOKIE_SECURE=1
 HARBOR_TRUST_PROXY=1
 ```
 
-Leave `HARBOR_TRUST_PROXY` unset when clients connect to Harbor directly. Webhooks may call internal URLs; that is intentional for a self-hosted install, and Harbor does not follow redirects when it delivers them.
+Leave `HARBOR_TRUST_PROXY` unset when clients connect to Harbor directly. Webhooks may call addresses on your own network. Harbor refuses link-local and cloud metadata addresses, and it does not follow redirects when it delivers a webhook. Cookie requests from the panel send `X-Harbor-Request: 1`. Only the owner can add or remove storage destinations.
 
 Destination credentials and webhook signing secrets are stored in SQLite. A copy of the data directory is a copy of those secrets. Back up that directory the way you would back up a password database.
 

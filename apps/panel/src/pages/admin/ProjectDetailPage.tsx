@@ -29,6 +29,7 @@ export default function ProjectDetailPage() {
   const [freshToken, setFreshToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [keyName, setKeyName] = useState("production");
+  const [freshSecret, setFreshSecret] = useState<string | null>(null);
   const [hookUrl, setHookUrl] = useState("");
   const [scheduleName, setScheduleName] = useState("nightly");
   const [intervalHours, setIntervalHours] = useState(24);
@@ -333,15 +334,21 @@ export default function ProjectDetailPage() {
         <section className="admin-card">
           <div className="admin-card-body space-y-4">
             <h2 className="text-base font-semibold text-gray-900 dark:text-white">Webhooks</h2>
-            <p className="text-sm text-gray-500">Harbor POSTs JSON and signs the body with an X-Harbor-Signature header.</p>
+            <p className="text-sm text-gray-500">Harbor POSTs JSON and signs the body with an X-Harbor-Signature header. The signing secret is shown once.</p>
+            {freshSecret && (
+              <p className="rounded-xl bg-brand-50 p-3 text-xs break-all text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
+                Signing secret: {freshSecret}
+              </p>
+            )}
             <form
               className="flex flex-col gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
-                void api(`/api/v1/projects/${projectId}/webhooks`, {
+                void api<Webhook>(`/api/v1/projects/${projectId}/webhooks`, {
                   method: "POST",
                   body: JSON.stringify({ url: hookUrl }),
-                }).then(() => {
+                }).then((hook) => {
+                  setFreshSecret(hook.secret ?? null);
                   setHookUrl("");
                   return load();
                 }).catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not add webhook"));
@@ -359,7 +366,6 @@ export default function ProjectDetailPage() {
                       Remove
                     </button>
                   </div>
-                  <p className="text-xs break-all text-gray-500">secret {hook.secret}</p>
                 </li>
               ))}
             </ul>

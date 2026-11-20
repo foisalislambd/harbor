@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"harbor/internal/netguard"
 	"harbor/internal/remote/r2"
 	"harbor/internal/store"
 )
@@ -145,6 +146,12 @@ func endpointFor(provider Provider, d store.Destination) (string, string, error)
 	}
 	if provider.NeedsEndpoint {
 		endpoint = d.Endpoint
+		if err := netguard.CheckURL(endpoint); err != nil {
+			if errors.Is(err, netguard.ErrBlocked) {
+				return "", "", errors.New("endpoint cannot point at a link-local or metadata address")
+			}
+			return "", "", err
+		}
 	}
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {

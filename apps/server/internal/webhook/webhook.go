@@ -8,8 +8,11 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+
+	"harbor/internal/netguard"
 )
 
 type Target struct {
@@ -28,6 +31,12 @@ func Dispatch(targets []Target, event string, data any) {
 	}
 	client := &http.Client{
 		Timeout: 8 * time.Second,
+		Transport: &http.Transport{
+			Proxy:               nil,
+			DialContext:         netguard.DialContext,
+			TLSHandshakeTimeout: 5 * time.Second,
+			ForceAttemptHTTP2:   true,
+		},
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -52,6 +61,17 @@ func wants(events, event string) bool {
 	return false
 }
 
+func safeWebhookURL(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "invalid-url"
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
+}
+
 func post(client *http.Client, t Target, event string, body []byte) {
 	mac := hmac.New(sha256.New, []byte(t.Secret))
 	mac.Write(body)
@@ -66,11 +86,11 @@ func post(client *http.Client, t Target, event string, body []byte) {
 	req.Header.Set("X-Harbor-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("webhook %s: %v", t.URL, err)
+		log.Printf("webhook %s: %v", safeWebhookURL(t.URL), err)
 		return
 	}
 	resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		log.Printf("webhook %s: status %d", t.URL, resp.StatusCode)
+		log.Printf("webhook %s: status %d", safeWebhookURL(t.URL), resp.StatusCode)
 	}
 }

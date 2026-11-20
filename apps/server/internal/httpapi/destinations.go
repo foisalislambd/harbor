@@ -44,6 +44,9 @@ func (a *API) listProviders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
+	if !requireOwner(w, r) {
+		return
+	}
 	var body destinationBody
 	if !readJSON(w, r, &body) {
 		return
@@ -68,6 +71,9 @@ func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) deleteDestination(w http.ResponseWriter, r *http.Request) {
+	if !requireOwner(w, r) {
+		return
+	}
 	id := chi.URLParam(r, "destinationID")
 	current, err := a.store.GetDestination(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
@@ -88,6 +94,9 @@ func (a *API) deleteDestination(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) testDestination(w http.ResponseWriter, r *http.Request) {
+	if !requireOwner(w, r) {
+		return
+	}
 	dest, err := a.store.GetDestination(r.Context(), chi.URLParam(r, "destinationID"))
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "destination not found")
