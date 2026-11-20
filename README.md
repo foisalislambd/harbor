@@ -6,7 +6,7 @@ Self-hosted backup vault. One Go process and a SQLite database store archives, d
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go 1.26](https://img.shields.io/badge/go-1.26-00ADD8.svg)](apps/server/go.mod)
 
-The panel is at `/`. The API is at `/api/v1`. Run it on a PC, a VPS, or in Docker. The current release is [v0.1.3](https://github.com/foisalislambd/harbor/releases/tag/v0.1.3) ([VERSION.md](VERSION.md)).
+The panel is at `/`. The API is at `/api/v1`. Run it on a PC, a VPS, or in Docker. The current release is [v0.2.0](https://github.com/foisalislambd/harbor/releases/tag/v0.2.0) ([VERSION.md](VERSION.md)).
 
 ![Harbor dashboard](docs/screenshots/dashboard.png)
 
@@ -52,8 +52,8 @@ The API guide, activity log, and settings are in the sidebar: [guide](docs/scree
 Images are published to `ghcr.io/foisalislambd/harbor` and `foisalislambd/harbor` when a higher version in `VERSION.md` is pushed to `main`.
 
 ```bash
-docker pull ghcr.io/foisalislambd/harbor:0.1.3
-docker run -d --name harbor -p 8787:8787 -v harbor-data:/data ghcr.io/foisalislambd/harbor:0.1.3
+docker pull ghcr.io/foisalislambd/harbor:0.2.0
+docker run -d --name harbor -p 8787:8787 -v harbor-data:/data ghcr.io/foisalislambd/harbor:0.2.0
 ```
 
 Open http://127.0.0.1:8787 and create the owner account. Data stays in the `harbor-data` volume. The image runs as the `harbor` user and exposes `GET /api/v1/health`.
@@ -64,19 +64,19 @@ Open http://127.0.0.1:8787 and create the owner account. Data stays in the `harb
 docker compose up --build -d
 ```
 
-`docker-compose.yml` builds the local Dockerfile, publishes port 8787, and mounts a `harbor-data` volume. To run a published image instead, set `image` to `ghcr.io/foisalislambd/harbor:0.1.3` (or `foisalislambd/harbor:0.1.3`) and remove `build`.
+`docker-compose.yml` builds the local Dockerfile, publishes port 8787, and mounts a `harbor-data` volume. To run a published image instead, set `image` to `ghcr.io/foisalislambd/harbor:0.2.0` (or `foisalislambd/harbor:0.2.0`) and remove `build`.
 
 ### Desktop
 
 A release binary includes the panel. `harbor` and `harbor desktop` open a window and listen only on `127.0.0.1:8787`.
 
-Windows: download [harbor-windows-amd64.exe](https://github.com/foisalislambd/harbor/releases/download/v0.1.3/harbor-windows-amd64.exe). Data is in `%AppData%\Harbor`.
+Windows: download [harbor-windows-amd64.exe](https://github.com/foisalislambd/harbor/releases/download/v0.2.0/harbor-windows-amd64.exe). Data is in `%AppData%\Harbor`.
 
 Linux:
 
 ```bash
-curl -fsSL -o harbor "https://github.com/foisalislambd/harbor/releases/download/v0.1.3/harbor-linux-amd64"
-curl -fsSL -o SHA256SUMS "https://github.com/foisalislambd/harbor/releases/download/v0.1.3/SHA256SUMS"
+curl -fsSL -o harbor "https://github.com/foisalislambd/harbor/releases/download/v0.2.0/harbor-linux-amd64"
+curl -fsSL -o SHA256SUMS "https://github.com/foisalislambd/harbor/releases/download/v0.2.0/SHA256SUMS"
 grep harbor-linux-amd64 SHA256SUMS | sha256sum -c -
 chmod +x harbor
 ./harbor
@@ -84,7 +84,7 @@ chmod +x harbor
 
 Data is in `~/.local/share/harbor` (or `$XDG_DATA_HOME/harbor`). Close the window to stop Harbor.
 
-macOS: download `harbor-darwin-arm64` or `harbor-darwin-amd64` from the [release](https://github.com/foisalislambd/harbor/releases/tag/v0.1.3), `chmod +x` it, and run it. Data is in `~/Library/Application Support/Harbor`.
+macOS: download `harbor-darwin-arm64` or `harbor-darwin-amd64` from the [release](https://github.com/foisalislambd/harbor/releases/tag/v0.2.0), `chmod +x` it, and run it. Data is in `~/Library/Application Support/Harbor`.
 
 `harbor-linux-arm64` is on the same release. `harbor serve` runs the panel and API without a window. Use that on a VPS. The Docker image is headless.
 
@@ -129,6 +129,7 @@ go run ./cmd/harbor serve -addr 127.0.0.1:8787 -data data -panel ../panel/dist
 | `HARBOR_COOKIE_SECURE` | empty | Set to `1` behind HTTPS so the session cookie is `Secure`. |
 | `HARBOR_CORS_ORIGIN` | empty | Exact origin, such as `https://panel.example.com`, when the panel is on another host. A path is rejected at startup. |
 | `HARBOR_TRUST_PROXY` | empty | Set to `1` only when a reverse proxy is the only client. Harbor then trusts `X-Forwarded-For` for rate limits and request logs. |
+| `HARBOR_SECRET_KEY` | empty | 32-byte key as 64 hex characters or base64. Used only when `secret.key` is not already in the data directory. Back this up outside the volume if you set it. |
 | `HARBOR_ENDPOINT` | `http://127.0.0.1:8787` | Default server for `harbor push`. |
 | `HARBOR_TOKEN` | empty | Default project API key for `harbor push`. |
 
@@ -187,7 +188,7 @@ HARBOR_COOKIE_SECURE=1
 HARBOR_TRUST_PROXY=1
 ```
 
-Leave `HARBOR_TRUST_PROXY` unset when clients connect to Harbor directly. Webhooks may call internal URLs; that is intentional for a self-hosted install, and Harbor does not follow redirects when it delivers them.
+Leave `HARBOR_TRUST_PROXY` unset when clients connect to Harbor directly. Webhooks may call addresses on your own network. Harbor refuses link-local and cloud metadata addresses, and it does not follow redirects when it delivers a webhook. Cookie requests from the panel send `X-Harbor-Request: 1`. Only the owner can add or remove storage destinations.
 
 Destination credentials and webhook signing secrets are stored in SQLite. A copy of the data directory is a copy of those secrets. Back up that directory the way you would back up a password database.
 

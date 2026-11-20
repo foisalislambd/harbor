@@ -13,7 +13,6 @@ import (
 	"mime"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -22,6 +21,7 @@ import (
 	"time"
 
 	"harbor/internal/config"
+	"harbor/internal/netguard"
 	"harbor/internal/panel"
 	"harbor/internal/replicate"
 	"harbor/internal/store"
@@ -159,7 +159,7 @@ func (a *API) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", a.cfg.CORSOrigin)
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Harbor-Request")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Vary", "Origin")
 		if r.Method == http.MethodOptions {
@@ -286,6 +286,9 @@ func (a *API) setupStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) setup(w http.ResponseWriter, r *http.Request) {
+	if !requireBrowserHeader(w, r) {
+		return
+	}
 	n, err := a.store.UserCount(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database unavailable")
@@ -327,6 +330,9 @@ func (a *API) setup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) login(w http.ResponseWriter, r *http.Request) {
+	if !requireBrowserHeader(w, r) {
+		return
+	}
 	var body struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -473,6 +479,9 @@ func (a *API) getSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) putSettings(w http.ResponseWriter, r *http.Request) {
+	if !requireOwner(w, r) {
+		return
+	}
 	var body struct {
 		InstanceName string `json:"instance_name"`
 	}
@@ -808,6 +817,9 @@ func (a *API) listWebhooks(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []store.Webhook{}
 	}
+	for i := range items {
+		items[i].Secret = ""
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
@@ -1076,6 +1088,8 @@ func (a *API) ingest(w http.ResponseWriter, r *http.Request, projectID string) {
 	}
 	if mediatype, _, err := mime.ParseMediaType(ctype); err == nil {
 		ctype = mediatype
+	} else {
+		ctype = "application/octet-stream"
 	}
 	backup, err := a.store.CreateBackup(r.Context(), store.Backup{
 		ProjectID:   project.ID,
@@ -1171,7 +1185,7 @@ func (a *API) downloadBackup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer body.Close()
-		w.Header().Set("Content-Type", b.ContentType)
+		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": b.Filename}))
 		w.Header().Set("X-Checksum-Sha256", b.Checksum)
@@ -1180,7 +1194,7 @@ func (a *API) downloadBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
-	w.Header().Set("Content-Type", b.ContentType)
+	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": b.Filename}))
 	w.Header().Set("X-Checksum-Sha256", b.Checksum)
@@ -1249,6 +1263,9 @@ func (a *API) allowProject(w http.ResponseWriter, r *http.Request, projectID, sc
 
 func (a *API) requireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !requireBrowserHeader(w, r) {
+			return
+		}
 		p, ok := a.authenticate(r)
 		if !ok || p.IsAPIKey {
 			writeError(w, http.StatusUnauthorized, "sign in required")
@@ -1260,6 +1277,9 @@ func (a *API) requireUser(next http.Handler) http.Handler {
 
 func (a *API) requireAny(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if bearer(r) == "" && !requireBrowserHeader(w, r) {
+			return
+		}
 		p, ok := a.authenticate(r)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "authentication required")
@@ -1376,6 +1396,26 @@ func (a *API) clearCredentialFailures(r *http.Request, email string) {
 	}
 }
 
+func requireOwner(w http.ResponseWriter, r *http.Request) bool {
+	if principalFrom(r).User.Role != "owner" {
+		writeError(w, http.StatusForbidden, "only the owner can do that")
+		return false
+	}
+	return true
+}
+
+func requireBrowserHeader(w http.ResponseWriter, r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	if r.Header.Get("X-Harbor-Request") == "1" {
+		return true
+	}
+	writeError(w, http.StatusForbidden, "missing X-Harbor-Request header")
+	return false
+}
+
 func validateProject(body projectBody, updating bool) error {
 	name := strings.TrimSpace(body.Name)
 	if name == "" || len(name) > 120 {
@@ -1420,9 +1460,11 @@ func validWebhookURL(raw string) error {
 	if len(raw) > 500 {
 		return errors.New("webhook url is too long")
 	}
-	parsed, err := url.Parse(raw)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return errors.New("webhook url must be an http or https URL")
+	if err := netguard.CheckURL(raw); err != nil {
+		if errors.Is(err, netguard.ErrBlocked) {
+			return errors.New("webhook url cannot point at a link-local or metadata address")
+		}
+		return err
 	}
 	return nil
 }

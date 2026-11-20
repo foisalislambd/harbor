@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"harbor/internal/netguard"
 	"harbor/internal/store"
 )
 
@@ -119,6 +120,7 @@ func FromDestination(d store.Destination) (*Client, error) {
 var defaultHTTP = &http.Client{
 	Transport: &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           netguard.DialContext,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 2 * time.Minute,
 		IdleConnTimeout:       90 * time.Second,

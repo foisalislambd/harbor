@@ -1,3 +1,4 @@
+import { useAdminAuth } from "@/components/admin/auth/admin-auth-provider";
 import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { ProviderLogo } from "@/components/provider-logo";
@@ -14,6 +15,7 @@ function formatCap(bytes: number) {
 export default function DestinationNewPage() {
   const { providerId = "" } = useParams();
   const navigate = useNavigate();
+  const { admin, loading: authLoading } = useAdminAuth();
   const [provider, setProvider] = useState<StorageProvider | null>(null);
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +32,12 @@ export default function DestinationNewPage() {
     key_prefix: "harbor",
     allow_over_free: false,
   });
+
+  useEffect(() => {
+    if (!authLoading && admin && admin.role !== "owner") {
+      navigate("/destinations", { replace: true });
+    }
+  }, [admin, authLoading, navigate]);
 
   useEffect(() => {
     api<StorageProviderList>("/api/v1/destination-providers")
