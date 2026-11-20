@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-20
+
 ### Security
 
 - Destination secrets and webhook signing secrets are encrypted at rest with AES-256-GCM. The key is `secret.key` in the data directory, or `HARBOR_SECRET_KEY` (64 hex characters or base64 of 32 bytes) when that file does not exist yet. An existing key file is kept even if the environment variable is also set. Plaintext rows from an older install are sealed the next time Harbor opens the database.
