@@ -2,6 +2,7 @@ package config
 
 import (
 	"flag"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -82,6 +83,7 @@ type Config struct {
 	SessionTTL   time.Duration
 	CookieSecure bool
 	CORSOrigin   string
+	TrustProxy   bool
 }
 
 func FromEnv() Config {
@@ -89,11 +91,49 @@ func FromEnv() Config {
 		Addr:         env("HARBOR_ADDR", ":8787"),
 		DataDir:      env("HARBOR_DATA_DIR", "data"),
 		PanelDir:     os.Getenv("HARBOR_PANEL_DIR"),
-		MaxUpload:    envInt64("HARBOR_MAX_UPLOAD_BYTES", 8<<30),
-		SessionTTL:   time.Duration(envInt64("HARBOR_SESSION_HOURS", 24*14)) * time.Hour,
+		MaxUpload:    envInt64("HARBOR_MAX_UPLOAD_BYTES", 8<<30, 1, 1<<40),
+		SessionTTL:   time.Duration(envInt64("HARBOR_SESSION_HOURS", 24*14, 1, 24*365)) * time.Hour,
 		CookieSecure: os.Getenv("HARBOR_COOKIE_SECURE") == "1",
-		CORSOrigin:   os.Getenv("HARBOR_CORS_ORIGIN"),
+		CORSOrigin:   strings.TrimSpace(os.Getenv("HARBOR_CORS_ORIGIN")),
+		TrustProxy:   os.Getenv("HARBOR_TRUST_PROXY") == "1",
 	}
+}
+
+// Validate checks values that would otherwise be accepted and then misbehave.
+func (c Config) Validate() error {
+	if strings.TrimSpace(c.Addr) == "" {
+		return errConfig("HARBOR_ADDR is empty")
+	}
+	if strings.TrimSpace(c.DataDir) == "" {
+		return errConfig("HARBOR_DATA_DIR is empty")
+	}
+	if c.MaxUpload <= 0 {
+		return errConfig("HARBOR_MAX_UPLOAD_BYTES must be positive")
+	}
+	if c.SessionTTL <= 0 {
+		return errConfig("HARBOR_SESSION_HOURS must be positive")
+	}
+	if c.CORSOrigin != "" && !validCORSOrigin(c.CORSOrigin) {
+		return errConfig("HARBOR_CORS_ORIGIN must be an origin like https://panel.example.com")
+	}
+	return nil
+}
+
+func errConfig(msg string) error { return &configError{msg} }
+
+type configError struct{ msg string }
+
+func (e *configError) Error() string { return e.msg }
+
+func validCORSOrigin(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	return u.Path == "" || u.Path == "/"
 }
 
 func (c *Config) ParseFlags(args []string) error {
@@ -111,13 +151,13 @@ func env(key, fallback string) string {
 	return fallback
 }
 
-func envInt64(key string, fallback int64) int64 {
+func envInt64(key string, fallback, min, max int64) int64 {
 	v := os.Getenv(key)
 	if v == "" {
 		return fallback
 	}
 	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil {
+	if err != nil || n < min || n > max {
 		return fallback
 	}
 	return n

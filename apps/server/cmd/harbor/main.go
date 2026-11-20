@@ -79,7 +79,8 @@ harbor serve is the headless server used by Docker and a VPS.
 
 Environment:
   HARBOR_ADDR, HARBOR_DATA_DIR, HARBOR_PANEL_DIR, HARBOR_MAX_UPLOAD_BYTES
-  HARBOR_TOKEN (for push), HARBOR_COOKIE_SECURE=1, HARBOR_CORS_ORIGIN
+  HARBOR_SESSION_HOURS, HARBOR_TOKEN (for push), HARBOR_COOKIE_SECURE=1
+  HARBOR_CORS_ORIGIN, HARBOR_TRUST_PROXY=1
 `, config.Version)
 }
 
@@ -98,14 +99,14 @@ func (r *running) shutdown() {
 }
 
 func boot(cfg config.Config) (*running, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	st, err := store.Open(cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
-	if err := seedOwner(st); err != nil {
-		st.Close()
-		return nil, err
-	}
+	warnDefaultPassword(st)
 	ln, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		st.Close()
@@ -132,6 +133,7 @@ func boot(cfg config.Config) (*running, error) {
 		Handler:           httpapi.New(cfg, st).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 	go func() {
 		log.Printf("harbor listening on %s (data %s)", cfg.Addr, cfg.DataDir)
@@ -150,25 +152,20 @@ func runRetention(st *store.Store) {
 }
 
 const (
-	seedEmail    = "admin@harbor.local"
-	seedPassword = "admin@123456"
+	legacySeedEmail    = "admin@harbor.local"
+	legacySeedPassword = "admin@123456"
 )
 
-func seedOwner(st *store.Store) error {
-	n, err := st.UserCount(context.Background())
-	if err != nil || n > 0 {
-		return err
-	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(seedPassword), bcrypt.DefaultCost)
+// warnDefaultPassword tells operators when an older build left the published
+// default password in place. Harbor no longer creates that account.
+func warnDefaultPassword(st *store.Store) {
+	user, err := st.UserByEmail(context.Background(), legacySeedEmail)
 	if err != nil {
-		return err
+		return
 	}
-	_, err = st.CreateOwner(context.Background(), seedEmail, "Admin", string(hash))
-	if err != nil {
-		return err
+	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(legacySeedPassword)) == nil {
+		log.Printf("WARNING: %s still uses the old default password. Change it in Settings before this Harbor is reachable by anyone else.", legacySeedEmail)
 	}
-	log.Printf("seeded owner %s", seedEmail)
-	return nil
 }
 
 func serve(args []string) error {
@@ -205,10 +202,10 @@ func desktopApp(args []string) error {
 	if !panel.Usable(cfg.PanelDir) {
 		return errors.New("this build has no panel; build apps/panel and copy dist to apps/server/internal/panel/dist, or pass -panel")
 	}
-	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return err
 	}
-	if logFile, err := os.OpenFile(filepath.Join(cfg.DataDir, "harbor.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+	if logFile, err := os.OpenFile(filepath.Join(cfg.DataDir, "harbor.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
 		defer logFile.Close()
 		log.SetOutput(io.MultiWriter(os.Stderr, logFile))
 	}

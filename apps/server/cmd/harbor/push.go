@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func push(args []string) error {
@@ -75,7 +76,10 @@ func push(args []string) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+*token)
 	req.Header.Set("Content-Type", form.FormDataContentType())
-	res, err := http.DefaultClient.Do(req)
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 60 * time.Second
+	client := &http.Client{Transport: transport}
+	res, err := client.Do(req)
 	if err != nil {
 		return err
 	}

@@ -4,7 +4,11 @@ Harbor stores other applications' backups. Treat the data directory, API keys, a
 
 ## Supported use
 
-Harbor 0.1.x is the current release. Run it on a machine you control. Put it behind HTTPS before it is reachable from the public internet, and set `HARBOR_COOKIE_SECURE=1`.
+Harbor 0.1.x is the current release. Run it on a machine you control. Put it behind HTTPS before it is reachable from the public internet, and set `HARBOR_COOKIE_SECURE=1`. Set `HARBOR_TRUST_PROXY=1` only when that proxy is the only path to Harbor.
+
+The first visit creates the owner account. Builds before this change created `admin@harbor.local` with the password `admin@123456`. If the server log warns that this password is still in use, change it in Settings before anyone else can reach the panel.
+
+Destination credentials and webhook signing secrets are stored in the SQLite file. The data directory is mode `0700`. Treat a copy of that directory as a full backup of those secrets.
 
 ## Reporting a vulnerability
 

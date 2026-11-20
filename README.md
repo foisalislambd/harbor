@@ -1,56 +1,82 @@
 # Harbor
 
-Open-source, self-hosted backup vault. One Go process and a SQLite database store archives, database dumps, and files from as many applications as you want. It runs on a PC, a VPS, or in Docker.
+Self-hosted backup vault. One Go process and a SQLite database store archives, database dumps, and files from as many applications as you want.
 
-The panel lives at `/`. The API lives at `/api/v1`.
+[![CI](https://github.com/foisalislambd/harbor/actions/workflows/ci.yml/badge.svg)](https://github.com/foisalislambd/harbor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go 1.26](https://img.shields.io/badge/go-1.26-00ADD8.svg)](apps/server/go.mod)
 
-## Install
+The panel is at `/`. The API is at `/api/v1`. Run it on a PC, a VPS, or in Docker. The current release is [v0.1.3](https://github.com/foisalislambd/harbor/releases/tag/v0.1.3) ([VERSION.md](VERSION.md)).
 
-[VERSION.md](VERSION.md) is the release version. A push to `main` publishes that version when it is higher than every existing GitHub release. The same number, or a lower one, does nothing.
+![Harbor dashboard](docs/screenshots/dashboard.png)
 
-The repository is [foisalislambd/harbor](https://github.com/foisalislambd/harbor). The same image is published to `ghcr.io/foisalislambd/harbor` and to Docker Hub as `foisalislambd/harbor`.
+## Features
+
+- Projects with pause, retention (last N and/or N days), and a byte quota. `0` means unlimited. If a create request omits retention, Harbor keeps the last 14 snapshots for 30 days.
+- API keys scoped to one project, with `backup:read`, `backup:write`, and `backup:delete`. The secret is shown once.
+- Content-addressed blobs, so identical uploads share one file.
+- Schedules that turn overdue when a backup does not arrive in time.
+- Webhooks for `backup.created` and `backup.deleted`, signed with `X-Harbor-Signature`.
+- A second copy in object storage. Cloudflare R2, Backblaze B2, Amazon S3, Wasabi, Google Cloud Storage, DigitalOcean Spaces, Hetzner, Scaleway, Linode, Vultr, OVH, Exoscale, Storj, Tigris, Filebase, IDrive e2, Oracle, IBM, Alibaba, Tencent, Contabo, Supabase, MEGA, and self-hosted S3 (MinIO, Ceph, Garage, SeaweedFS, or another S3-compatible endpoint) use the same form. Harbor checks the bucket before saving. R2 and B2 stop at their 10 GB free allowance unless you allow more.
+- An audit log, extra panel users, and a background retention pass every 15 minutes.
+
+## Screens
+
+The first visit creates the owner. After that, the same page is a sign-in form.
+
+![Create the owner account](docs/screenshots/setup.png)
+
+Projects, backups, and destinations:
+
+![Projects](docs/screenshots/projects.png)
+
+![Project settings and API keys](docs/screenshots/project.png)
+
+![Backups](docs/screenshots/backups.png)
+
+![Destinations](docs/screenshots/destinations.png)
+
+The API guide, activity log, and settings are in the sidebar: [guide](docs/screenshots/guide.png), [activity](docs/screenshots/activity.png), [settings](docs/screenshots/settings.png).
+
+## Tech stack
+
+- Go 1.26 server (`chi`, `modernc.org/sqlite`, bcrypt)
+- React 19 panel (Vite, TypeScript, Tailwind CSS 4)
+- SQLite for metadata, files on disk for blobs
+- Optional S3-compatible replication, implemented in-process (no extra daemon)
+
+## Quick start
 
 ### Docker
 
-```bash
-docker pull ghcr.io/foisalislambd/harbor:0.1.1
-docker run -d --name harbor -p 8787:8787 -v harbor-data:/data ghcr.io/foisalislambd/harbor:0.1.1
-
-# or Docker Hub
-docker pull foisalislambd/harbor:0.1.1
-```
-
-Open http://127.0.0.1:8787. The first visit creates the owner account. Data stays in the `harbor-data` volume.
-
-### Compose from the published image
-
-```yaml
-services:
-  harbor:
-    image: foisalislambd/harbor:0.1.1
-    ports:
-      - "8787:8787"
-    volumes:
-      - harbor-data:/data
-volumes:
-  harbor-data:
-```
+Images are published to `ghcr.io/foisalislambd/harbor` and `foisalislambd/harbor` when a higher version in `VERSION.md` is pushed to `main`.
 
 ```bash
-docker compose up -d
+docker pull ghcr.io/foisalislambd/harbor:0.1.3
+docker run -d --name harbor -p 8787:8787 -v harbor-data:/data ghcr.io/foisalislambd/harbor:0.1.3
 ```
 
-### Desktop app
+Open http://127.0.0.1:8787 and create the owner account. Data stays in the `harbor-data` volume. The image runs as the `harbor` user and exposes `GET /api/v1/health`.
 
-The release binary includes the same panel. Run it and a window opens on this computer. The first visit creates the owner account. Backups stay in the user data folder, and the API listens only on `127.0.0.1:8787`.
+### Compose
 
-Windows: download [harbor-windows-amd64.exe](https://github.com/foisalislambd/harbor/releases/download/v0.1.1/harbor-windows-amd64.exe) and open it. Data is in `%AppData%\Harbor`.
+```bash
+docker compose up --build -d
+```
+
+`docker-compose.yml` builds the local Dockerfile, publishes port 8787, and mounts a `harbor-data` volume. To run a published image instead, set `image` to `ghcr.io/foisalislambd/harbor:0.1.3` (or `foisalislambd/harbor:0.1.3`) and remove `build`.
+
+### Desktop
+
+A release binary includes the panel. `harbor` and `harbor desktop` open a window and listen only on `127.0.0.1:8787`.
+
+Windows: download [harbor-windows-amd64.exe](https://github.com/foisalislambd/harbor/releases/download/v0.1.3/harbor-windows-amd64.exe). Data is in `%AppData%\Harbor`.
 
 Linux:
 
 ```bash
-curl -fsSL -o harbor "https://github.com/foisalislambd/harbor/releases/download/v0.1.1/harbor-linux-amd64"
-curl -fsSL -o SHA256SUMS "https://github.com/foisalislambd/harbor/releases/download/v0.1.1/SHA256SUMS"
+curl -fsSL -o harbor "https://github.com/foisalislambd/harbor/releases/download/v0.1.3/harbor-linux-amd64"
+curl -fsSL -o SHA256SUMS "https://github.com/foisalislambd/harbor/releases/download/v0.1.3/SHA256SUMS"
 grep harbor-linux-amd64 SHA256SUMS | sha256sum -c -
 chmod +x harbor
 ./harbor
@@ -58,57 +84,57 @@ chmod +x harbor
 
 Data is in `~/.local/share/harbor` (or `$XDG_DATA_HOME/harbor`). Close the window to stop Harbor.
 
-macOS: download `harbor-darwin-arm64` or `harbor-darwin-amd64` from the [release](https://github.com/foisalislambd/harbor/releases/tag/v0.1.1), `chmod +x` it, and run it. Data is in `~/Library/Application Support/Harbor`.
+macOS: download `harbor-darwin-arm64` or `harbor-darwin-amd64` from the [release](https://github.com/foisalislambd/harbor/releases/tag/v0.1.3), `chmod +x` it, and run it. Data is in `~/Library/Application Support/Harbor`.
 
-Other archives on the release: `harbor-linux-arm64`. The same binary also sends backups:
+`harbor-linux-arm64` is on the same release. `harbor serve` runs the panel and API without a window. Use that on a VPS. The Docker image is headless.
 
-```bash
-harbor push -file backup.tar.gz -token hb_your_project_key -name nightly -kind archive -source my-app
-```
+### From source
 
-`harbor serve` runs the panel and API without a window. Use that on a VPS. `harbor` and `harbor desktop` open the window.
-
-The Docker image serves the panel and the API on port 8787 and does not open a window.
-
-## Layout
-
-```
-apps/server   Go API, blob store, desktop window, and `harbor` CLI
-apps/panel    React panel (ZenPanel shell, routes at /)
-```
-
-SQLite metadata and content-addressed files live in the data directory (`data/` by default).
-
-## Run it locally
+You need Go 1.26 or newer and Node.js 20 or newer.
 
 Terminal 1:
 
 ```bash
 cd apps/server
-go run ./cmd/harbor serve -addr :8787 -data data
+go run ./cmd/harbor serve -addr 127.0.0.1:8787 -data data
 ```
 
 Terminal 2:
 
 ```bash
 cd apps/panel
-npm install
+npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:5173. The dev server proxies `/api` to port 8787.
-
-An empty data directory signs in as `admin@harbor.local` / `admin@123456`. Change that password in Settings if this Harbor is reachable by anyone else.
-
-## Docker
+Open http://127.0.0.1:5173. The dev server proxies `/api` to port 8787. To serve the built panel from the Go process:
 
 ```bash
-docker compose up --build
+cd apps/panel
+npm ci
+npm run build
+cd ../server
+go run ./cmd/harbor serve -addr 127.0.0.1:8787 -data data -panel ../panel/dist
 ```
 
-The panel and API are both served on http://127.0.0.1:8787.
+## Configuration
 
-## Send a backup from any app
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `HARBOR_ADDR` | `:8787` | Listen address. The desktop app uses `127.0.0.1:8787` when this is unset. |
+| `HARBOR_DATA_DIR` | `data` | SQLite file and blobs. The desktop app uses the user data directory when this is unset. |
+| `HARBOR_PANEL_DIR` | empty | Built panel to serve at `/`. A release binary embeds one. |
+| `HARBOR_MAX_UPLOAD_BYTES` | 8 GiB | Upload limit. A non-positive value, or one above 1 TiB, falls back to the default. |
+| `HARBOR_SESSION_HOURS` | 336 (14 days) | Panel session length. Values outside 1 hour through 1 year fall back to the default. |
+| `HARBOR_COOKIE_SECURE` | empty | Set to `1` behind HTTPS so the session cookie is `Secure`. |
+| `HARBOR_CORS_ORIGIN` | empty | Exact origin, such as `https://panel.example.com`, when the panel is on another host. A path is rejected at startup. |
+| `HARBOR_TRUST_PROXY` | empty | Set to `1` only when a reverse proxy is the only client. Harbor then trusts `X-Forwarded-For` for rate limits and request logs. |
+| `HARBOR_ENDPOINT` | `http://127.0.0.1:8787` | Default server for `harbor push`. |
+| `HARBOR_TOKEN` | empty | Default project API key for `harbor push`. |
+
+Flags on `harbor serve` override the address, data directory, and panel directory: `-addr`, `-data`, `-panel`.
+
+## Usage
 
 Create a project in the panel and copy its API key. That key can only see that project.
 
@@ -121,7 +147,7 @@ curl -X POST http://127.0.0.1:8787/api/v1/push \
   -F "source=my-app"
 ```
 
-Or use the same binary:
+The same binary can upload:
 
 ```bash
 harbor push -file backup.tar.gz -token hb_your_project_key -name nightly -kind archive -source my-app
@@ -136,36 +162,52 @@ With the same key:
 - `GET /api/v1/backups/{id}/download`
 - `DELETE /api/v1/backups/{id}`
 
-Panel users sign in with a session cookie and manage every project from `/`.
+Panel users sign in with an HttpOnly session cookie and manage every project from `/`.
 
-## What it keeps track of
+`GET /api/v1/health` is public and reports the version and whether an owner still needs to be created.
 
-- Projects, with pause, retention (last N and/or N days), and a byte quota. `0` means unlimited. If a create request omits retention, Harbor keeps the last 14 snapshots for 30 days. A project can also select a destination. Backups stay on this machine, and a selected destination receives a second copy.
-- Destinations. A project can keep a second copy in object storage. Cloudflare R2 and Backblaze B2 stop at their 10 GB free allowance unless you allow more. Amazon S3, Wasabi, Google Cloud Storage, DigitalOcean Spaces, Hetzner, Scaleway, Linode, Vultr, OVH, Exoscale, Storj, Tigris, Filebase, IDrive e2, Oracle, IBM, Alibaba, Tencent, Contabo, Supabase, MEGA, and self-hosted S3 such as MinIO are available the same way. Harbor checks the bucket before saving.
-- API keys with `backup:read`, `backup:write`, and `backup:delete`. The secret is shown once.
-- Content-addressed blobs, so identical uploads share one file.
-- Schedules that turn overdue when a backup does not arrive in time.
-- Webhooks for `backup.created` and `backup.deleted`, signed with `X-Harbor-Signature`.
-- An audit log, extra panel users, and a background retention pass every 15 minutes.
+## Project structure
 
-## Environment
+```
+apps/server     Go API, blob store, desktop window, and the harbor CLI
+apps/panel      React panel, routes at /
+Dockerfile      Multi-stage build: panel, then a static Go binary
+docker-compose.yml
+VERSION.md      Release version published to GitHub, GHCR, and Docker Hub
+```
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `HARBOR_ADDR` | `:8787` | Listen address |
-| `HARBOR_DATA_DIR` | `data` | SQLite file and blobs |
-| `HARBOR_PANEL_DIR` | empty | Built panel to serve at `/` |
-| `HARBOR_MAX_UPLOAD_BYTES` | 8 GiB | Upload limit |
-| `HARBOR_SESSION_HOURS` | 336 | Panel session length |
-| `HARBOR_COOKIE_SECURE` | empty | Set to `1` behind HTTPS |
-| `HARBOR_CORS_ORIGIN` | empty | Exact origin if the panel is on another host |
-| `HARBOR_TOKEN` | empty | Default token for `harbor push` |
+SQLite metadata and content-addressed files live in the data directory (`data/` by default). The directory is created mode `0700`.
 
-## Project files
+## Deployment
 
-- [LICENSE](LICENSE) — MIT
-- [CONTRIBUTING.md](CONTRIBUTING.md) — build, test, and pull requests
-- [SECURITY.md](SECURITY.md) — how to report a vulnerability
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- [CHANGELOG.md](CHANGELOG.md)
-- [VERSION.md](VERSION.md) — number published to GitHub releases, GHCR, and Docker Hub. Release binaries include the desktop panel.
+Put Harbor behind HTTPS before it is reachable from the public internet. Terminate TLS at a reverse proxy, forward to `127.0.0.1:8787`, and set:
+
+```bash
+HARBOR_COOKIE_SECURE=1
+HARBOR_TRUST_PROXY=1
+```
+
+Leave `HARBOR_TRUST_PROXY` unset when clients connect to Harbor directly. Webhooks may call internal URLs; that is intentional for a self-hosted install, and Harbor does not follow redirects when it delivers them.
+
+Destination credentials and webhook signing secrets are stored in SQLite. A copy of the data directory is a copy of those secrets. Back up that directory the way you would back up a password database.
+
+An install created by an older build may still have the account `admin@harbor.local` with the password `admin@123456`. Harbor logs a warning at startup when that password is still set. Change it in Settings. New installs do not create that account.
+
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
+
+## Development
+
+```bash
+cd apps/server && go test ./...
+cd apps/panel && npm ci && npx tsc -b --pretty false && npm run lint
+```
+
+CI on pull requests runs `gofmt`, `go vet`, `go test ./...`, the panel typecheck, and ESLint. A push to `main` that raises `VERSION.md` above every existing GitHub release builds binaries, publishes the container images, and opens a GitHub release. Docker Hub login uses the `DOCKERHUB_TOKEN` repository secret.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The project also has a [code of conduct](CODE_OF_CONDUCT.md) and a [changelog](CHANGELOG.md).
+
+## License
+
+[MIT](LICENSE). Copyright (c) 2026 Harbor contributors.
