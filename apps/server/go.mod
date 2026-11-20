@@ -2,6 +2,8 @@ module harbor
 
 go 1.26.0
 
+toolchain go1.26.11
+
 require (
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808

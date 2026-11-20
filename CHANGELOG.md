@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Backup downloads are sent as `application/octet-stream`.
 - The audit log keeps the newest 10,000 rows. Sign-in lockouts keep a bounded number of addresses. A `?` in the data directory path cannot change SQLite pragmas.
 - A project quota check no longer wraps past the size of a 64-bit integer.
-- CI pins GitHub Actions by commit and gives the test jobs read-only contents permission. `govulncheck` and `npm audit` run in CI.
+- CI pins GitHub Actions by commit and gives the test jobs read-only contents permission. `govulncheck` and `npm audit` run in CI. The Go job and the image build use Go 1.26.11, which includes the standard-library fixes through 1.26.6.
 - A new data directory no longer signs in as `admin@harbor.local` / `admin@123456`. The first visit creates the owner. An existing install that still has that password logs a warning at startup.
 - Sign-in and password changes lock for 15 minutes after 8 failed attempts from the same address or email.
 - Changing a password revokes every other session.
