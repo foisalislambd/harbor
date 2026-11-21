@@ -98,10 +98,33 @@ export default function DestinationNewPage() {
                 <span className={labelClass}>Name</span>
                 <input className={fieldClass} required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={provider.name} />
               </label>
+              {provider.telegram ? (
+                <>
+                  <label className="block">
+                    <span className={labelClass}>Chat or channel ID</span>
+                    <input className={fieldClass} required value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })} placeholder="-1001234567890 or @channelname" />
+                  </label>
+                  <label className="block md:col-span-2">
+                    <span className={labelClass}>Bot token</span>
+                    <input className={fieldClass} required type="password" autoComplete="new-password" value={form.secret_access_key} onChange={(e) => setForm({ ...form, secret_access_key: e.target.value })} placeholder="123456789:AAH..." />
+                  </label>
+                  <label className="block">
+                    <span className={labelClass}>Topic ID</span>
+                    <input className={fieldClass} value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} placeholder="Optional forum topic" />
+                  </label>
+                  <label className="block">
+                    <span className={labelClass}>Bot API URL</span>
+                    <input className={fieldClass} value={form.endpoint} onChange={(e) => setForm({ ...form, endpoint: e.target.value })} placeholder="Leave empty for https://api.telegram.org" />
+                  </label>
+                </>
+              ) : (
               <label className="block">
                 <span className={labelClass}>Bucket</span>
                 <input className={fieldClass} required value={form.bucket} onChange={(e) => setForm({ ...form, bucket: e.target.value })} placeholder="harbor-backups" />
               </label>
+              )}
+              {!provider.telegram && (
+              <>
               {provider.account_id && (
                 <label className="block md:col-span-2">
                   <span className={labelClass}>Account ID</span>
@@ -148,8 +171,10 @@ export default function DestinationNewPage() {
                   Keep copying after the free {formatCap(provider.free_bytes)}
                 </label>
               )}
+              </>
+              )}
               <div className="md:col-span-2">
-                <button className={primaryButtonClass} disabled={saving} type="submit">{saving ? "Checking bucket…" : "Add destination"}</button>
+                <button className={primaryButtonClass} disabled={saving} type="submit">{saving ? (provider.telegram ? "Checking the chat…" : "Checking bucket…") : "Add destination"}</button>
               </div>
             </form>
           </div>

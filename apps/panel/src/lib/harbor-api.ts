@@ -75,6 +75,7 @@ export type StorageProvider = {
   endpoint: boolean;
   endpoint_placeholder: string;
   allow_http: boolean;
+  telegram?: boolean;
 };
 
 export type StorageProviderList = {

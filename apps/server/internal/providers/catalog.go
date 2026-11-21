@@ -4,14 +4,17 @@
 package providers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 
+	"harbor/internal/copier"
 	"harbor/internal/netguard"
 	"harbor/internal/remote/r2"
 	"harbor/internal/store"
+	"harbor/internal/telegram"
 )
 
 const (
@@ -34,6 +37,7 @@ type Provider struct {
 	NeedsEndpoint       bool     `json:"endpoint"`
 	EndpointPlaceholder string   `json:"endpoint_placeholder"`
 	AllowHTTP           bool     `json:"allow_http"`
+	Telegram            bool     `json:"telegram,omitempty"`
 	endpointTemplate    string
 	fixedEndpoint       string
 	sigRegion           string
@@ -83,6 +87,9 @@ func Prepare(d store.Destination) (store.Destination, error) {
 	if !ok {
 		return store.Destination{}, errors.New("choose a storage service")
 	}
+	if provider.Telegram {
+		return telegram.Prepare(d)
+	}
 	d.Region = strings.ToLower(strings.TrimSpace(d.Region))
 	d.Endpoint = strings.TrimSpace(d.Endpoint)
 	d.Jurisdiction = strings.ToLower(strings.TrimSpace(d.Jurisdiction))
@@ -130,6 +137,28 @@ func Open(d store.Destination) (*r2.Client, error) {
 		Versioned:    provider.versioned,
 		VirtualHost:  provider.virtualHost,
 	}, nil
+}
+
+// s3Copier adapts the S3 client to the destination interface.
+type s3Copier struct{ *r2.Client }
+
+func (s s3Copier) Put(ctx context.Context, up copier.Upload) (string, error) {
+	if err := s.PutFile(ctx, up.Key, up.Path, up.ContentType, up.Checksum, up.Size); err != nil {
+		return "", err
+	}
+	return up.Key, nil
+}
+
+// Connect opens the destination that will copy backups.
+func Connect(d store.Destination) (copier.Store, error) {
+	if d.Provider == store.ProviderTelegram {
+		return telegram.Open(d)
+	}
+	client, err := Open(d)
+	if err != nil {
+		return nil, err
+	}
+	return s3Copier{client}, nil
 }
 
 func endpointFor(provider Provider, d store.Destination) (string, string, error) {
@@ -202,6 +231,21 @@ func regionService(id, name, group, summary, placeholder, template string, steps
 }
 
 var catalog = []Provider{
+	{
+		ID: store.ProviderTelegram, Name: "Telegram", Group: "Messaging", Telegram: true,
+		Summary: "Send each backup to a chat or channel as a document.",
+		Steps: []string{
+			"In Telegram, open @BotFather, send /newbot, and copy the token.",
+			"Add the bot to the destination chat or channel. A channel bot must be an admin so it can post.",
+			"The chat id is a number such as -1001234567890, or @channelname for a public channel. A forum topic id is optional.",
+			"The public Bot API accepts 50 MB and can download 20 MB, so Harbor splits larger files into 20 MB parts. Download those parts in order and join them with cat. The caption's SHA-256 is of the whole file.",
+			"A local telegram-bot-api server can take parts up to about 1.9 GB. Paste its base URL, such as http://127.0.0.1:8081, and leave the path empty.",
+			"When retention deletes a backup, Harbor asks Telegram to delete those messages. In a private chat a bot can delete its own messages for 48 hours. In a group or channel it can delete them while it is still allowed to.",
+		},
+		FreeNote:            "Leave the Bot API URL empty to use https://api.telegram.org. The bot token is stored encrypted and is not shown again.",
+		EndpointPlaceholder: "https://api.telegram.org",
+		AllowHTTP:           true,
+	},
 	{
 		ID: store.ProviderCloudflareR2, Name: "Cloudflare R2", Group: "Common",
 		Summary: "10 GB of Standard storage free each month, and egress is free.",

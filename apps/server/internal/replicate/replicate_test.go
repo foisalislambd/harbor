@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"harbor/internal/copier"
 	"harbor/internal/remote/r2"
 	"harbor/internal/store"
 )
@@ -174,11 +175,11 @@ func TestSyncStopsAtFreeStorage(t *testing.T) {
 func stubClient(t *testing.T, srv *httptest.Server) func() {
 	t.Helper()
 	prev := openClient
-	openClient = func(d store.Destination) (*r2.Client, error) {
-		return &r2.Client{
+	openClient = func(d store.Destination) (copier.Store, error) {
+		return s3Copier{&r2.Client{
 			Endpoint: srv.URL, Bucket: d.Bucket, AccessKey: d.AccessKeyID, Secret: d.Secret,
 			Region: "auto", HTTP: srv.Client(),
-		}, nil
+		}}, nil
 	}
 	return func() { openClient = prev }
 }
@@ -239,6 +240,15 @@ func writeBlob(t *testing.T, st *store.Store, checksum string, body []byte) {
 	if err := os.WriteFile(path, body, 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+type s3Copier struct{ *r2.Client }
+
+func (s s3Copier) Put(ctx context.Context, up copier.Upload) (string, error) {
+	if err := s.PutFile(ctx, up.Key, up.Path, up.ContentType, up.Checksum, up.Size); err != nil {
+		return "", err
+	}
+	return up.Key, nil
 }
 
 func filepathDir(path string) string {

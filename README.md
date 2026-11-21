@@ -18,6 +18,7 @@ The panel is at `/`. The API is at `/api/v1`. Run it on a PC, a VPS, or in Docke
 - Schedules that turn overdue when a backup does not arrive in time.
 - Webhooks for `backup.created` and `backup.deleted`, signed with `X-Harbor-Signature`.
 - A second copy in object storage. Cloudflare R2, Backblaze B2, Amazon S3, Wasabi, Google Cloud Storage, DigitalOcean Spaces, Hetzner, Scaleway, Linode, Vultr, OVH, Exoscale, Storj, Tigris, Filebase, IDrive e2, Oracle, IBM, Alibaba, Tencent, Contabo, Supabase, MEGA, and self-hosted S3 (MinIO, Ceph, Garage, SeaweedFS, or another S3-compatible endpoint) use the same form. Harbor checks the bucket before saving. R2 and B2 stop at their 10 GB free allowance unless you allow more.
+- A Telegram destination. Create a bot with @BotFather, add it to a chat or channel, and Harbor uploads each backup with `sendDocument`. The bot token is encrypted at rest and is not shown again.
 - An audit log, extra panel users, and a background retention pass every 15 minutes.
 
 ## Screens
@@ -36,14 +37,34 @@ Projects, backups, and destinations:
 
 ![Destinations](docs/screenshots/destinations.png)
 
+![Telegram destination](docs/screenshots/telegram.png)
+
 The API guide, activity log, and settings are in the sidebar: [guide](docs/screenshots/guide.png), [activity](docs/screenshots/activity.png), [settings](docs/screenshots/settings.png).
+
+## Telegram
+
+1. In Telegram, open @BotFather and send `/newbot`. Copy the token it returns.
+2. Add that bot to the chat or channel that should receive backups. In a channel, make the bot an admin so it can post.
+3. In Harbor, open Destinations, choose Telegram, and enter the token and the chat id. A public channel can use `@channelname`. A private chat or a private channel uses a number such as `-1001234567890`. A forum topic id is optional. Harbor calls `getMe` and `getChat`, posts a short test message, and deletes it before saving.
+4. Choose that destination on a project. Each backup is uploaded with `sendDocument`. The caption includes the project, backup name, kind, size, timestamp, and the SHA-256 of the whole file.
+
+The public Bot API accepts uploads up to 50 MB and downloads up to 20 MB. Harbor splits a larger file into 20 MB parts named `harbor-<name>-partNN-of-NN.bin`. Download the parts in order and join them:
+
+```bash
+cat harbor-nightly-part01-of-03.bin harbor-nightly-part02-of-03.bin harbor-nightly-part03-of-03.bin > nightly.bin
+sha256sum nightly.bin
+```
+
+A local [telegram-bot-api](https://github.com/tdlib/telegram-bot-api) server raises the limit to 2 GB. Paste its base URL, such as `http://127.0.0.1:8081`, in Bot API URL. Harbor then uses parts of about 1.9 GB. That URL cannot point at a link-local or cloud metadata address. Harbor retries HTTP 429 and 5xx responses and honors `retry_after` up to 60 seconds.
+
+When retention deletes a backup, Harbor calls `deleteMessage` for each part. In a private chat a bot can delete its own messages for 48 hours. In a group or channel it can delete them for as long as it remains allowed to. Removing the destination itself leaves the messages in the chat. If the local file is gone, Harbor can download parts that the public API still serves. A custom server that returns a disk path instead of a file URL cannot be downloaded from here; save the parts from the chat.
 
 ## Tech stack
 
 - Go 1.26 server (`chi`, `modernc.org/sqlite`, bcrypt)
 - React 19 panel (Vite, TypeScript, Tailwind CSS 4)
 - SQLite for metadata, files on disk for blobs
-- Optional S3-compatible replication, implemented in-process (no extra daemon)
+- Optional S3-compatible replication, and Telegram document uploads, implemented in-process (no extra daemon)
 
 ## Quick start
 

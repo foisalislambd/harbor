@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Telegram destinations. A bot token and chat id send each backup as one or more documents. The public Bot API splits files into 20 MB parts so they can be downloaded again. A custom Bot API URL can take parts up to about 1.9 GB. Retention asks Telegram to delete those messages. The token is stored encrypted and is left out of list responses.
+
 ### Changed
 
 - Panel pages use the full width beside the sidebar, with the same padding on narrow and wide screens.

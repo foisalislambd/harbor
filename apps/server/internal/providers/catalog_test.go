@@ -24,9 +24,25 @@ func TestEveryProviderBuildsAnEndpoint(t *testing.T) {
 		if provider.ID == "minio" || provider.ID == "ceph" || provider.ID == "garage" || provider.ID == "seaweedfs" {
 			dest.Endpoint = provider.EndpointPlaceholder
 		}
+		if provider.ID == store.ProviderTelegram {
+			dest.AccountID = "-1001234567890"
+			dest.Secret = "123456789:AAHexampletokenvalue"
+			dest.Endpoint = ""
+			dest.Region = "4"
+		}
 		got, err := Prepare(dest)
 		if err != nil {
 			t.Fatalf("%s: %v", provider.ID, err)
+		}
+		if provider.Telegram {
+			client, err := Connect(got)
+			if err != nil {
+				t.Fatalf("%s: %v", provider.ID, err)
+			}
+			if client == nil {
+				t.Fatalf("%s: no client", provider.ID)
+			}
+			continue
 		}
 		client, err := Open(got)
 		if err != nil {

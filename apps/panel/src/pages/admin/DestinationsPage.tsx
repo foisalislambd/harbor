@@ -114,7 +114,9 @@ export default function DestinationsPage() {
             const limit = destination.free_storage_bytes || 0;
             const accountUsed = destination.account_used_bytes || 0;
             const width = limit > 0 ? Math.min(100, (Math.min(limit, accountUsed) / limit) * 100) : 0;
-            const where = [destination.bucket, destination.region, destination.endpoint, destination.jurisdiction && `${destination.jurisdiction} jurisdiction`].filter(Boolean).join(" · ");
+            const where = destination.provider === "telegram"
+              ? [destination.account_id && `chat ${destination.account_id}`, destination.region && `topic ${destination.region}`, destination.access_key_id && destination.access_key_id !== "bot" && `@${destination.access_key_id}`, destination.endpoint].filter(Boolean).join(" · ")
+              : [destination.bucket, destination.region, destination.endpoint, destination.jurisdiction && `${destination.jurisdiction} jurisdiction`].filter(Boolean).join(" · ");
             return (
               <article key={destination.id} className="admin-card">
                 <div className="admin-card-body space-y-3">
@@ -137,7 +139,7 @@ export default function DestinationsPage() {
                           setError(null);
                           setMessage(null);
                           void api(`/api/v1/destinations/${destination.id}/test`, { method: "POST" })
-                            .then(() => setMessage(`${destination.name} can see the bucket.`))
+                            .then(() => setMessage(destination.provider === "telegram" ? `${destination.name} can post in the chat.` : `${destination.name} can see the bucket.`))
                             .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not reach this storage"));
                         }}
                       >
@@ -147,7 +149,10 @@ export default function DestinationsPage() {
                         type="button"
                         className={dangerButtonClass}
                         onClick={() => {
-                          if (!confirm(`Remove ${destination.name}? Backups stay on this machine. Files already in the bucket stay there.`)) return;
+                          const note = destination.provider === "telegram"
+                            ? `Remove ${destination.name}? Backups stay on this machine. Messages already in the chat stay there.`
+                            : `Remove ${destination.name}? Backups stay on this machine. Files already in the bucket stay there.`;
+                          if (!confirm(note)) return;
                           setError(null);
                           void api(`/api/v1/destinations/${destination.id}`, { method: "DELETE" })
                             .then(load)

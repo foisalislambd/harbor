@@ -61,7 +61,10 @@ type Project struct {
 	UpdatedAt       string `json:"updated_at"`
 }
 
-const ProviderCloudflareR2 = "cloudflare_r2"
+const (
+	ProviderCloudflareR2 = "cloudflare_r2"
+	ProviderTelegram     = "telegram"
+)
 
 type Destination struct {
 	ID            string `json:"id"`

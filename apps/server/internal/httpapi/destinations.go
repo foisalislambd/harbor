@@ -11,6 +11,7 @@ import (
 	"harbor/internal/providers"
 	"harbor/internal/replicate"
 	"harbor/internal/store"
+	"harbor/internal/telegram"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -56,9 +57,13 @@ func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := checkDestination(r.Context(), dest); err != nil {
+	checked, err := checkDestination(r.Context(), dest)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if bot, ok := checked.(*telegram.Client); ok && bot.Username != "" {
+		dest.AccessKeyID = bot.Username
 	}
 	created, err := a.store.CreateDestination(r.Context(), dest)
 	if err != nil {
@@ -106,7 +111,7 @@ func (a *API) testDestination(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not load destination")
 		return
 	}
-	if err := checkDestination(r.Context(), dest); err != nil {
+	if _, err := checkDestination(r.Context(), dest); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -188,6 +193,16 @@ func normalizeDestination(body destinationBody, creating bool) (store.Destinatio
 	name := strings.TrimSpace(body.Name)
 	if name == "" || len(name) > 80 {
 		return store.Destination{}, errors.New("destination name is required")
+	}
+	if body.Provider == store.ProviderTelegram {
+		secret := strings.TrimSpace(body.SecretAccessKey)
+		if creating && !validSecret(secret) {
+			return store.Destination{}, errors.New("bot token is required")
+		}
+		return providers.Prepare(store.Destination{
+			Name: name, Provider: body.Provider, AccountID: body.AccountID,
+			Secret: secret, Region: body.Region, Endpoint: body.Endpoint,
+		})
 	}
 	access := strings.TrimSpace(body.AccessKeyID)
 	if !validAccess(access) {
@@ -287,12 +302,15 @@ func validPrefix(prefix string) bool {
 	return !strings.HasPrefix(prefix, "/") && !strings.HasSuffix(prefix, "/")
 }
 
-func checkDestination(ctx context.Context, dest store.Destination) error {
-	client, err := providers.Open(dest)
+func checkDestination(ctx context.Context, dest store.Destination) (interface{ Check(context.Context) error }, error) {
+	client, err := providers.Connect(dest)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	return client.Check(ctx)
+	if err := client.Check(ctx); err != nil {
+		return nil, err
+	}
+	return client, nil
 }
