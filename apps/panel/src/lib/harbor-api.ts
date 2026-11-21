@@ -95,6 +95,8 @@ export type Destination = {
   endpoint: string;
   allow_over_free: boolean;
   key_prefix: string;
+  signed_in?: boolean;
+  account_label?: string;
   used_bytes: number;
   account_used_bytes: number;
   free_storage_bytes: number;

@@ -24,7 +24,15 @@ func (a *API) listDestinations(w http.ResponseWriter, r *http.Request) {
 	}
 	views := make([]destinationView, 0, len(items))
 	for _, item := range items {
-		view := withFree(item)
+		view := decorateDestination(item)
+		if item.Provider == store.ProviderTelegram {
+			full, err := a.store.GetDestination(r.Context(), item.ID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "could not list destinations")
+				return
+			}
+			view.SignedIn, view.AccountLabel = telegram.PublicStatus(full.Secret)
+		}
 		scope := item.AccountID
 		if scope == "" {
 			scope = item.AccessKeyID
@@ -57,13 +65,11 @@ func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	checked, err := checkDestination(r.Context(), dest)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if bot, ok := checked.(*telegram.Client); ok && bot.Username != "" {
-		dest.AccessKeyID = bot.Username
+	if dest.Provider != store.ProviderTelegram {
+		if _, err := checkDestination(r.Context(), dest); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	created, err := a.store.CreateDestination(r.Context(), dest)
 	if err != nil {
@@ -72,7 +78,7 @@ func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
 	}
 	actor := principalFrom(r)
 	a.store.AddAudit(r.Context(), actor.Actor(), "destination.created", created.ID, created.Name)
-	writeJSON(w, http.StatusCreated, withFree(created))
+	writeJSON(w, http.StatusCreated, decorateDestination(created))
 }
 
 func (a *API) deleteDestination(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +184,19 @@ type destinationView struct {
 	ProviderName     string `json:"provider_name"`
 	FreeStorageBytes int64  `json:"free_storage_bytes"`
 	AccountUsedBytes int64  `json:"account_used_bytes"`
+	SignedIn         bool   `json:"signed_in"`
+	AccountLabel     string `json:"account_label,omitempty"`
+}
+
+func decorateDestination(d store.Destination) destinationView {
+	signed, label := false, ""
+	if d.Provider == store.ProviderTelegram {
+		signed, label = telegram.PublicStatus(d.Secret)
+	}
+	view := withFree(d)
+	view.SignedIn = signed
+	view.AccountLabel = label
+	return view
 }
 
 func withFree(d store.Destination) destinationView {
@@ -196,12 +215,16 @@ func normalizeDestination(body destinationBody, creating bool) (store.Destinatio
 	}
 	if body.Provider == store.ProviderTelegram {
 		secret := strings.TrimSpace(body.SecretAccessKey)
+		access := strings.TrimSpace(body.AccessKeyID)
 		if creating && !validSecret(secret) {
-			return store.Destination{}, errors.New("bot token is required")
+			return store.Destination{}, errors.New("api hash is required")
+		}
+		if !validAccess(access) {
+			return store.Destination{}, errors.New("api id is required")
 		}
 		return providers.Prepare(store.Destination{
 			Name: name, Provider: body.Provider, AccountID: body.AccountID,
-			Secret: secret, Region: body.Region, Endpoint: body.Endpoint,
+			AccessKeyID: access, Secret: secret, Region: body.Region, Endpoint: body.Endpoint,
 		})
 	}
 	access := strings.TrimSpace(body.AccessKeyID)

@@ -63,7 +63,7 @@ export default function DestinationNewPage() {
         method: "POST",
         body: JSON.stringify({ ...form, provider: provider.id }),
       });
-      navigate("/destinations", { state: { message: `${provider.name} is connected. Choose it on a project to copy backups there.` } });
+      navigate("/destinations", { state: { message: provider.telegram ? `${provider.name} is saved. Send a login code on this page, then choose it on a project.` : `${provider.name} is connected. Choose it on a project to copy backups there.` } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add this destination");
       setSaving(false);
@@ -101,20 +101,24 @@ export default function DestinationNewPage() {
               {provider.telegram ? (
                 <>
                   <label className="block">
-                    <span className={labelClass}>Chat or channel ID</span>
-                    <input className={fieldClass} required value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })} placeholder="-1001234567890 or @channelname" />
+                    <span className={labelClass}>API ID</span>
+                    <input className={fieldClass} required inputMode="numeric" value={form.access_key_id} onChange={(e) => setForm({ ...form, access_key_id: e.target.value })} placeholder="123456" />
                   </label>
                   <label className="block md:col-span-2">
-                    <span className={labelClass}>Bot token</span>
-                    <input className={fieldClass} required type="password" autoComplete="new-password" value={form.secret_access_key} onChange={(e) => setForm({ ...form, secret_access_key: e.target.value })} placeholder="123456789:AAH..." />
+                    <span className={labelClass}>API hash</span>
+                    <input className={fieldClass} required type="password" autoComplete="new-password" value={form.secret_access_key} onChange={(e) => setForm({ ...form, secret_access_key: e.target.value })} placeholder="From my.telegram.org/apps" />
+                  </label>
+                  <label className="block">
+                    <span className={labelClass}>Phone number</span>
+                    <input className={fieldClass} required value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })} placeholder="+15551234567" />
+                  </label>
+                  <label className="block">
+                    <span className={labelClass}>Target</span>
+                    <input className={fieldClass} value={form.endpoint} onChange={(e) => setForm({ ...form, endpoint: e.target.value })} placeholder="Saved Messages, @channel, invite link, or numeric id" />
                   </label>
                   <label className="block">
                     <span className={labelClass}>Topic ID</span>
                     <input className={fieldClass} value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} placeholder="Optional forum topic" />
-                  </label>
-                  <label className="block">
-                    <span className={labelClass}>Bot API URL</span>
-                    <input className={fieldClass} value={form.endpoint} onChange={(e) => setForm({ ...form, endpoint: e.target.value })} placeholder="Leave empty for https://api.telegram.org" />
                   </label>
                 </>
               ) : (
@@ -174,7 +178,7 @@ export default function DestinationNewPage() {
               </>
               )}
               <div className="md:col-span-2">
-                <button className={primaryButtonClass} disabled={saving} type="submit">{saving ? (provider.telegram ? "Checking the chat…" : "Checking bucket…") : "Add destination"}</button>
+                <button className={primaryButtonClass} disabled={saving} type="submit">{saving ? (provider.telegram ? "Saving…" : "Checking bucket…") : "Add destination"}</button>
               </div>
             </form>
           </div>

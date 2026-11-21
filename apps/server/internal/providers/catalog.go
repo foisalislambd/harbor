@@ -233,18 +233,16 @@ func regionService(id, name, group, summary, placeholder, template string, steps
 var catalog = []Provider{
 	{
 		ID: store.ProviderTelegram, Name: "Telegram", Group: "Messaging", Telegram: true,
-		Summary: "Send each backup to a chat or channel as a document.",
+		Summary: "Upload each backup from your own Telegram account.",
 		Steps: []string{
-			"In Telegram, open @BotFather, send /newbot, and copy the token.",
-			"Add the bot to the destination chat or channel. A channel bot must be an admin so it can post.",
-			"The chat id is a number such as -1001234567890, or @channelname for a public channel. A forum topic id is optional.",
-			"The public Bot API accepts 50 MB and can download 20 MB, so Harbor splits larger files into 20 MB parts. Download those parts in order and join them with cat. The caption's SHA-256 is of the whole file.",
-			"A local telegram-bot-api server can take parts up to about 1.9 GB. Paste its base URL, such as http://127.0.0.1:8081, and leave the path empty.",
-			"When retention deletes a backup, Harbor asks Telegram to delete those messages. In a private chat a bot can delete its own messages for 48 hours. In a group or channel it can delete them while it is still allowed to.",
+			"Open https://my.telegram.org/apps, create an application, and copy the api_id and api_hash.",
+			"Enter the phone number of the account that should send the backups, then save the destination.",
+			"On Destinations, send a login code, enter the code Telegram delivers, and enter the cloud password if the account has one.",
+			"Leave the target empty for Saved Messages, or use a @username, an invite link, or a numeric id. A forum topic id is optional.",
+			"A regular account sends one document up to 2 GB. A Premium account sends up to 4 GB. Larger backups are split into numbered parts you join with cat.",
+			"This signs in as you, not as a bot. Log out on Destinations to revoke the session. The api hash and session stay encrypted.",
 		},
-		FreeNote:            "Leave the Bot API URL empty to use https://api.telegram.org. The bot token is stored encrypted and is not shown again.",
-		EndpointPlaceholder: "https://api.telegram.org",
-		AllowHTTP:           true,
+		FreeNote: "The api hash and MTProto session are stored encrypted and are not shown again.",
 	},
 	{
 		ID: store.ProviderCloudflareR2, Name: "Cloudflare R2", Group: "Common",

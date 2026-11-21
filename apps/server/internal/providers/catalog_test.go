@@ -25,9 +25,10 @@ func TestEveryProviderBuildsAnEndpoint(t *testing.T) {
 			dest.Endpoint = provider.EndpointPlaceholder
 		}
 		if provider.ID == store.ProviderTelegram {
-			dest.AccountID = "-1001234567890"
-			dest.Secret = "123456789:AAHexampletokenvalue"
-			dest.Endpoint = ""
+			dest.AccountID = "+15551234567"
+			dest.AccessKeyID = "123456"
+			dest.Secret = "0123456789abcdef0123456789abcdef"
+			dest.Endpoint = "@harborbackups"
 			dest.Region = "4"
 		}
 		got, err := Prepare(dest)

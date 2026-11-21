@@ -132,6 +132,7 @@ func SyncBackup(ctx context.Context, st *store.Store, backup store.Backup) (stri
 			Key: key, Path: path, ContentType: backup.ContentType, Checksum: backup.Checksum, Size: backup.SizeBytes,
 			Project: project.Name, Name: backup.Name, Kind: backup.Kind, CreatedAt: backup.CreatedAt,
 		})
+		keepSession(ctx, st, dest.ID, client)
 		if err != nil {
 			if saveErr := saveFailure(ctx, st, backup, dest.ID, key, err); saveErr != nil {
 				return "", saveErr
@@ -148,6 +149,18 @@ func SyncBackup(ctx context.Context, st *store.Store, backup store.Backup) (stri
 }
 
 const storeStatusSynced = "synced"
+
+func keepSession(ctx context.Context, st *store.Store, destinationID string, client copier.Store) {
+	keeper, ok := client.(interface{ Secret() string })
+	if !ok {
+		return
+	}
+	secret := keeper.Secret()
+	if secret == "" {
+		return
+	}
+	_ = st.UpdateDestinationSecret(ctx, destinationID, secret)
+}
 
 func saveFailure(ctx context.Context, st *store.Store, backup store.Backup, destinationID, key string, cause error) error {
 	msg := cause.Error()
@@ -218,9 +231,11 @@ func FlushDeletes(ctx context.Context, st *store.Store) {
 			continue
 		}
 		if err := client.Delete(ctx, item.ObjectKey); err != nil {
+			keepSession(ctx, st, dest.ID, client)
 			log.Printf("remote delete %s: %v", item.ObjectKey, err)
 			continue
 		}
+		keepSession(ctx, st, dest.ID, client)
 		if err := st.FinishRemoteDelete(ctx, item.DestinationID, item.ObjectKey); err != nil {
 			log.Printf("remote delete: %v", err)
 		}
@@ -257,6 +272,7 @@ func OpenRemote(ctx context.Context, st *store.Store, backup store.Backup) (io.R
 			continue
 		}
 		body, err := client.Open(ctx, replica.ObjectKey)
+		keepSession(ctx, st, dest.ID, client)
 		if err != nil {
 			last = err
 			continue
