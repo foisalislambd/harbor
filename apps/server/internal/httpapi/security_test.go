@@ -32,6 +32,9 @@ func TestSecurityHeadersAndJSONLimit(t *testing.T) {
 	if !strings.Contains(health.Header().Get("Content-Security-Policy"), "script-src 'self'") {
 		t.Fatal("missing content security policy")
 	}
+	if !strings.Contains(health.Body.String(), `"public_url":""`) {
+		t.Fatalf("health should report an empty public url: %s", health.Body.String())
+	}
 
 	payload := []byte(`{"email":"` + strings.Repeat("a", maxJSONBody) + `","password":"correct-horse"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(payload))
@@ -41,6 +44,23 @@ func TestSecurityHeadersAndJSONLimit(t *testing.T) {
 	handler.ServeHTTP(res, req)
 	if res.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized body %d %s", res.Code, res.Body.String())
+	}
+}
+
+func TestHealthPublicURL(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	handler := New(config.Config{
+		DataDir: dir, MaxUpload: 1 << 20, SessionTTL: time.Hour, PublicURL: "https://harbor.example.com",
+	}, st).Handler()
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"public_url":"https://harbor.example.com"`) {
+		t.Fatalf("health %d %s", res.Code, res.Body.String())
 	}
 }
 

@@ -30,3 +30,18 @@ func TestFromEnvClampsInvalidNumbers(t *testing.T) {
 		t.Fatal("expected a path in the CORS origin to be rejected")
 	}
 }
+
+func TestPublicURL(t *testing.T) {
+	t.Setenv("HARBOR_PUBLIC_URL", "https://harbor.example.com/")
+	cfg := FromEnv()
+	if cfg.PublicURL != "https://harbor.example.com" {
+		t.Fatal(cfg.PublicURL)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfg.PublicURL = "https://harbor.example.com/api"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected a path in the public URL to be rejected")
+	}
+}

@@ -276,6 +276,7 @@ func (a *API) health(w http.ResponseWriter, r *http.Request) {
 		"ok":          true,
 		"version":     config.Version,
 		"needs_setup": n == 0,
+		"public_url":  a.cfg.PublicURL,
 	})
 }
 

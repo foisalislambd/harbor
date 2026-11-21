@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- The API guide uses the address the panel is open on. Set `HARBOR_PUBLIC_URL` when that address should be a fixed origin instead. Health reports it as `public_url`.
+
 - Panel pages use the full width beside the sidebar, with the same padding on narrow and wide screens.
 
 ## [0.2.0] - 2026-11-20
