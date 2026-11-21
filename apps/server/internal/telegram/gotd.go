@@ -151,21 +151,9 @@ func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, stor
 	return err
 }
 
-func (g gotdEngine) SendCode(ctx context.Context, apiID int, cred *credentials, phone string) (CodeStatus, error) {
-	// A new code gets a new auth key. An old unauthorized key can still be
-	// attached to a datacenter that does not own this phone, and auth.sendCode
-	// on that key can answer without delivering anything.
-	cred.Session = nil
-	cred.PhoneCodeHash = ""
-	cred.Authorized = false
-	return g.exchangeCode(ctx, apiID, phone, cred, true, func(ctx context.Context, client *telegram.Client) (tg.AuthSentCodeClass, error) {
-		return sendCodeOnDC(ctx, client, phone)
-	})
-}
-
 func (g gotdEngine) ResendCode(ctx context.Context, apiID int, cred *credentials, phone string) (CodeStatus, error) {
 	if cred.PhoneCodeHash == "" {
-		return CodeStatus{}, errors.New("send a login code first")
+		return CodeStatus{}, errSendCodeFirst
 	}
 	return g.exchangeCode(ctx, apiID, phone, cred, false, func(ctx context.Context, client *telegram.Client) (tg.AuthSentCodeClass, error) {
 		sent, err := client.API().AuthResendCode(ctx, &tg.AuthResendCodeRequest{
@@ -207,7 +195,7 @@ func (g gotdEngine) CancelCode(ctx context.Context, apiID int, cred *credentials
 
 func (g gotdEngine) SendLoginEmail(ctx context.Context, apiID int, cred *credentials, phone, email string) (string, int, error) {
 	if cred.PhoneCodeHash == "" {
-		return "", 0, errors.New("send a login code first")
+		return "", 0, errSendCodeFirst
 	}
 	var pattern string
 	var length int
@@ -228,7 +216,7 @@ func (g gotdEngine) SendLoginEmail(ctx context.Context, apiID int, cred *credent
 
 func (g gotdEngine) VerifyLoginEmail(ctx context.Context, apiID int, cred *credentials, phone, emailCode string) (CodeStatus, error) {
 	if cred.PhoneCodeHash == "" {
-		return CodeStatus{}, errors.New("send a login code first")
+		return CodeStatus{}, errSendCodeFirst
 	}
 	return g.exchangeCode(ctx, apiID, phone, cred, false, func(ctx context.Context, client *telegram.Client) (tg.AuthSentCodeClass, error) {
 		verified, err := client.API().AccountVerifyEmail(ctx, &tg.AccountVerifyEmailRequest{
@@ -389,7 +377,7 @@ func (g gotdEngine) Self(ctx context.Context, apiID int, cred *credentials) (str
 			return err
 		}
 		if !status.Authorized || status.User == nil {
-			return errors.New("sign in to Telegram from Destinations first")
+			return errNotSignedIn
 		}
 		name = userLabel(status.User)
 		premium = status.User.GetPremium()

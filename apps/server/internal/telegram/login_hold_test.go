@@ -87,4 +87,51 @@ func TestExplainTelegramErrors(t *testing.T) {
 	if !errors.Is(explain(ErrPasswordNeeded), ErrPasswordNeeded) {
 		t.Fatal("password error was rewritten")
 	}
+	if StatusCode(explain(tgerr.New(400, "PHONE_CODE_EXPIRED"))) != 400 {
+		t.Fatal("expired code should be a client error")
+	}
+	if StatusCode(explain(tgerr.New(420, "FLOOD_WAIT_32"))) != 429 {
+		t.Fatal("flood wait should be 429")
+	}
+	if StatusCode(errNotSignedIn) != 409 || StatusCode(errTelegramUnreachable) != 504 {
+		t.Fatal("local status")
+	}
+	redacted := redact(explain(tgerr.New(400, "PHONE_CODE_EXPIRED")), credentials{})
+	if StatusCode(redacted) != 400 {
+		t.Fatalf("redact dropped status: %v", StatusCode(redacted))
+	}
+}
+
+func TestSendCodeFlightJoins(t *testing.T) {
+	key := "join-test"
+	leader, lead := codeSends.begin(key)
+	if !lead {
+		t.Fatal("expected the leader")
+	}
+	started := make(chan struct{})
+	joined := make(chan *codeFlight, 1)
+	go func() {
+		flight, ok := codeSends.begin(key)
+		if ok {
+			t.Error("second call became a leader")
+		}
+		close(started)
+		<-flight.done
+		joined <- flight
+	}()
+	<-started
+	leader.status = CodeStatus{Type: "app", TypeName: "auth.sentCodeTypeApp"}
+	cred := &credentials{Session: []byte("same-key"), PhoneCodeHash: "hash", persist: true}
+	codeSends.finish(key, leader, cred)
+	flight := <-joined
+	other := &credentials{}
+	flight.apply(other)
+	if string(other.Session) != "same-key" || other.PhoneCodeHash != "hash" || !other.persist {
+		t.Fatalf("%+v", other)
+	}
+	if again, lead := codeSends.begin(key); !lead {
+		t.Fatal("flight was not cleared")
+	} else {
+		codeSends.finish(key, again, &credentials{})
+	}
 }

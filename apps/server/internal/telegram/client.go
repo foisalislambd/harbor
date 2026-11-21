@@ -78,21 +78,27 @@ func (c *Client) Secret() string {
 	return raw
 }
 
-// SendCode asks Telegram to deliver a login code. A signed-in session is
-// revoked first. Any other saved auth key is dropped so this code and the
-// later sign-in share one new key.
+// SendCode asks Telegram to deliver a login code. One account has one
+// in-flight send, so a second click waits for that auth key instead of
+// replacing it. PersistSession reports whether this call owns the session
+// that should be sealed.
 func (c *Client) SendCode(ctx context.Context) (CodeStatus, error) {
-	if c.cred.Authorized {
-		if err := c.engine.LogOut(ctx, c.apiID, &c.cred, c.phone); err != nil {
-			return CodeStatus{}, err
-		}
+	c.cred.persist = false
+	// Drop a leftover unauthorized key before the engine sees it. A signed-in
+	// session is revoked by the one send that owns the request, not here,
+	// because a second click must not log the account out twice.
+	if !c.cred.Authorized {
+		c.cred.Session = nil
+		c.cred.PhoneCodeHash = ""
+		c.cred.User = ""
+		c.cred.Peer = nil
 	}
-	c.cred.Session = nil
-	c.cred.Authorized = false
-	c.cred.User = ""
-	c.cred.PhoneCodeHash = ""
-	c.cred.Peer = nil
 	return c.engine.SendCode(ctx, c.apiID, &c.cred, c.phone)
+}
+
+// PersistSession reports whether SendCode changed the session on this call.
+func (c *Client) PersistSession() bool {
+	return c.cred.persist
 }
 
 // ResendCode asks Telegram for the next delivery method on the same auth key.
@@ -130,7 +136,7 @@ func (c *Client) VerifyLoginEmail(ctx context.Context, code string) (CodeStatus,
 // SignIn completes the code step. ErrPasswordNeeded means the cloud password is next.
 func (c *Client) SignIn(ctx context.Context, code string) (string, error) {
 	if c.cred.PhoneCodeHash == "" {
-		return "", errors.New("send a login code first")
+		return "", errSendCodeFirst
 	}
 	name, err := c.engine.SignIn(ctx, c.apiID, &c.cred, c.phone, code)
 	if err != nil {
@@ -171,7 +177,7 @@ func (c *Client) LogOut(ctx context.Context) error {
 // Check confirms the session and that the target chat can be resolved.
 func (c *Client) Check(ctx context.Context) error {
 	if !c.cred.Authorized || len(c.cred.Session) == 0 {
-		return errors.New("sign in to Telegram from Destinations first")
+		return errNotSignedIn
 	}
 	name, premium, err := c.engine.Self(ctx, c.apiID, &c.cred)
 	if err != nil {
@@ -232,7 +238,7 @@ func (c *Client) Delete(ctx context.Context, key string) error {
 		return err
 	}
 	if !c.cred.Authorized {
-		return errors.New("sign in to Telegram from Destinations first")
+		return errNotSignedIn
 	}
 	return c.engine.Delete(ctx, c.apiID, &c.cred, ref)
 }
@@ -244,7 +250,7 @@ func (c *Client) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	if !c.cred.Authorized {
-		return nil, errors.New("sign in to Telegram from Destinations first")
+		return nil, errNotSignedIn
 	}
 	pr, pw := io.Pipe()
 	go func() {

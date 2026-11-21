@@ -20,6 +20,17 @@ func telegramContext(r *http.Request) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(r.Context()), 50*time.Second)
 }
 
+// writeTelegramError sends a JSON error. Telegram rejecting the phone, the
+// code, or the api_id is a 4xx. A datacenter that cannot be reached stays 502
+// or 504. The body is the redacted message, never the raw RPC dump.
+func writeTelegramError(w http.ResponseWriter, err error) {
+	status := telegram.StatusCode(err)
+	if status < 400 {
+		status = http.StatusBadGateway
+	}
+	writeError(w, status, err.Error())
+}
+
 func (a *API) telegramSendCode(w http.ResponseWriter, r *http.Request) {
 	dest, client, ok := a.telegramClient(w, r)
 	if !ok {
@@ -28,12 +39,14 @@ func (a *API) telegramSendCode(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := telegramContext(r)
 	defer cancel()
 	status, err := client.SendCode(ctx)
-	if saveErr := a.store.UpdateDestinationSecret(ctx, dest.ID, client.Secret()); saveErr != nil {
-		writeError(w, http.StatusInternalServerError, "could not save the telegram session")
-		return
+	if client.PersistSession() {
+		if saveErr := a.store.UpdateDestinationSecret(ctx, dest.ID, client.Secret()); saveErr != nil {
+			writeError(w, http.StatusInternalServerError, "could not save the telegram session")
+			return
+		}
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeTelegramError(w, err)
 		return
 	}
 	log.Printf("telegram sentCode destination=%s type=%s next_type=%s timeout=%d dc=%d", dest.ID, status.TypeName, status.NextTypeName, status.Timeout, status.DC)
@@ -54,7 +67,7 @@ func (a *API) telegramResendCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeTelegramError(w, err)
 		return
 	}
 	log.Printf("telegram resendCode destination=%s type=%s next_type=%s timeout=%d dc=%d", dest.ID, status.TypeName, status.NextTypeName, status.Timeout, status.DC)
@@ -74,7 +87,7 @@ func (a *API) telegramCancelCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeTelegramError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -99,7 +112,7 @@ func (a *API) telegramSendEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeTelegramError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"email_pattern": pattern, "length": length})
@@ -124,7 +137,7 @@ func (a *API) telegramVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeTelegramError(w, err)
 		return
 	}
 	log.Printf("telegram verifyEmail destination=%s type=%s next_type=%s timeout=%d dc=%d", dest.ID, status.TypeName, status.NextTypeName, status.Timeout, status.DC)
@@ -174,7 +187,7 @@ func (a *API) telegramSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeTelegramError(w, err)
 		return
 	}
 	a.store.AddAudit(ctx, principalFrom(r).Actor(), "destination.telegram_login", dest.ID, name)
@@ -194,7 +207,7 @@ func (a *API) telegramLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeTelegramError(w, err)
 		return
 	}
 	a.store.AddAudit(ctx, principalFrom(r).Actor(), "destination.telegram_logout", dest.ID, dest.Name)

@@ -297,6 +297,7 @@ function TelegramLogin({
   onCancel: () => void;
 }) {
   const [localError, setLocalError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
   const fail = (err: unknown, fallback: string) => {
     const text = err instanceof Error ? err.message : fallback;
     setLocalError(text);
@@ -305,6 +306,12 @@ function TelegramLogin({
   const clear = () => {
     setLocalError(null);
     onError(null);
+  };
+  const run = (work: () => Promise<void>) => {
+    if (pending) return;
+    setPending(true);
+    clear();
+    void work().finally(() => setPending(false));
   };
   const apply = (status: TelegramCode) => {
     onMessage(status.message);
@@ -323,14 +330,14 @@ function TelegramLogin({
         <button
           type="button"
           className={quietButtonClass}
+          disabled={pending}
           onClick={() => {
-            clear();
-            void api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/code`, { method: "POST" })
+            run(() => api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/code`, { method: "POST" })
               .then(apply)
-              .catch((err: unknown) => fail(err, "Could not send a code"));
+              .catch((err: unknown) => fail(err, "Could not send a code")));
           }}
         >
-          Send login code
+          {pending ? "Sending code..." : "Send login code"}
         </button>
       )}
       {active && delivery && (
@@ -346,39 +353,36 @@ function TelegramLogin({
           {phase === "email" && (
             <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
               event.preventDefault();
-              clear();
-              void api<{ email_pattern?: string }>(`/api/v1/destinations/${destinationID}/telegram/email`, { method: "POST", body: JSON.stringify({ email }) })
+              run(() => api<{ email_pattern?: string }>(`/api/v1/destinations/${destinationID}/telegram/email`, { method: "POST", body: JSON.stringify({ email }) })
                 .then((result) => {
                   onMessage(`Telegram sent a confirmation code to ${result.email_pattern || email}.`);
                   onEmailCode();
                 })
-                .catch((err: unknown) => fail(err, "Could not send the email code"));
+                .catch((err: unknown) => fail(err, "Could not send the email code")));
             }}>
-              <input className={fieldClass} type="email" value={email} onChange={(e) => onEmail(e.target.value)} placeholder="Login email" required />
-              <button className={quietButtonClass} type="submit">Send email code</button>
+              <input className={fieldClass} type="email" value={email} onChange={(e) => onEmail(e.target.value)} placeholder="Login email" required disabled={pending} />
+              <button className={quietButtonClass} type="submit" disabled={pending}>Send email code</button>
             </form>
           )}
           {phase === "email_code" && (
             <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
               event.preventDefault();
-              clear();
-              void api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/email/verify`, { method: "POST", body: JSON.stringify({ code }) })
+              run(() => api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/email/verify`, { method: "POST", body: JSON.stringify({ code }) })
                 .then((status) => {
                   onCode("");
                   apply(status);
                 })
-                .catch((err: unknown) => fail(err, "Could not confirm the email"));
+                .catch((err: unknown) => fail(err, "Could not confirm the email")));
             }}>
-              <input className={fieldClass} value={code} onChange={(e) => onCode(e.target.value)} placeholder="Email code" required />
-              <button className={quietButtonClass} type="submit">Confirm email</button>
+              <input className={fieldClass} value={code} onChange={(e) => onCode(e.target.value)} placeholder="Email code" required disabled={pending} />
+              <button className={quietButtonClass} type="submit" disabled={pending}>Confirm email</button>
             </form>
           )}
           {(phase === "code" || phase === "password") && delivery.type !== "setup_email" && delivery.type !== "payment" && (
             <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
               event.preventDefault();
-              clear();
               const body = phase === "password" ? { password } : { code, password };
-              void api<{ status: string }>(`/api/v1/destinations/${destinationID}/telegram/login`, { method: "POST", body: JSON.stringify(body) })
+              run(() => api<{ status: string }>(`/api/v1/destinations/${destinationID}/telegram/login`, { method: "POST", body: JSON.stringify(body) })
                 .then((result) => {
                   if (result.status === "password") {
                     onPasswordPhase();
@@ -388,35 +392,33 @@ function TelegramLogin({
                   onMessage(`${name} is signed in.`);
                   return onDone();
                 })
-                .catch((err: unknown) => fail(err, "Could not sign in"));
+                .catch((err: unknown) => fail(err, "Could not sign in")));
             }}>
               {phase === "code" ? (
                 <input className={fieldClass} value={code} onChange={(e) => onCode(e.target.value)} placeholder="Login code" required />
               ) : (
                 <input className={fieldClass} type="password" value={password} onChange={(e) => onPassword(e.target.value)} placeholder="Cloud password" required />
               )}
-              <button className={quietButtonClass} type="submit">{phase === "password" ? "Confirm password" : "Confirm code"}</button>
+              <button className={quietButtonClass} type="submit" disabled={pending}>{phase === "password" ? "Confirm password" : "Confirm code"}</button>
             </form>
           )}
           <div className="flex flex-wrap gap-2">
             {delivery.next_type && phase !== "email" && phase !== "email_code" && (
-              <button type="button" className={quietButtonClass} onClick={() => {
-                clear();
-                void api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/resend`, { method: "POST" })
+              <button type="button" className={quietButtonClass} disabled={pending} onClick={() => {
+                run(() => api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/resend`, { method: "POST" })
                   .then(apply)
-                  .catch((err: unknown) => fail(err, "Could not resend the code"));
+                  .catch((err: unknown) => fail(err, "Could not resend the code")));
               }}>
                 Resend by {delivery.next_type.replaceAll("_", " ")}
               </button>
             )}
-            <button type="button" className={quietButtonClass} onClick={() => {
-              clear();
-              void api(`/api/v1/destinations/${destinationID}/telegram/cancel`, { method: "POST" })
+            <button type="button" className={quietButtonClass} disabled={pending} onClick={() => {
+              run(() => api(`/api/v1/destinations/${destinationID}/telegram/cancel`, { method: "POST" })
                 .then(() => {
                   onMessage(`Login cancelled for ${name}.`);
                   onCancel();
                 })
-                .catch((err: unknown) => fail(err, "Could not cancel the code"));
+                .catch((err: unknown) => fail(err, "Could not cancel the code")));
             }}>
               Cancel
             </button>
