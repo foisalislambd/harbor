@@ -237,7 +237,7 @@ var catalog = []Provider{
 		Steps: []string{
 			"Open https://my.telegram.org/apps, create an application, and copy the api_id and api_hash.",
 			"Enter the phone number of the account that should send the backups, then save the destination.",
-			"On Destinations, send a login code. The page shows Telegram's exact response, such as auth.sentCodeTypeApp (chat Telegram, 777000 on another signed-in phone), auth.sentCodeTypeSetUpEmailRequired, auth.sentCodeTypeFragmentSms, or auth.sentCodeTypeFirebaseSms. Resend appears only when Telegram sets next_type. If next_type is empty, the code cannot be switched to SMS. Cancel is the only call to auth.cancelCode.",
+			"On Destinations, send a login code or sign in with a QR code. The phone scans it from Settings, Devices, Link Desktop Device. A login code shows Telegram's exact response, such as auth.sentCodeTypeApp (chat Telegram, 777000 on another signed-in phone). Resend appears only when Telegram sets next_type. If next_type is empty, the code cannot be switched to SMS.",
 			"Leave the target empty for Saved Messages, or use a @username, an invite link, or a numeric id. A forum topic id is optional.",
 			"A regular account sends one document up to 2 GB. A Premium account sends up to 4 GB. Larger backups are split into numbered parts you join with cat.",
 			"This signs in as you, not as a bot. Log out on Destinations to revoke the session. The api hash and session stay encrypted.",

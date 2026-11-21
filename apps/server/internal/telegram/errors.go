@@ -17,6 +17,7 @@ var (
 	errNotSignedIn   = errors.New("sign in to Telegram from Destinations first")
 	errSendCodeFirst = errors.New("send a login code first")
 	errLoginLost     = errors.New("send a login code again; the Telegram session for this code is gone")
+	errQRFirst       = errors.New("show a QR code first")
 )
 
 // statusError is a Telegram failure with the HTTP status the panel should get.
@@ -51,7 +52,7 @@ func StatusCode(err error) int {
 		}
 	}
 	switch {
-	case errors.Is(err, errNotSignedIn), errors.Is(err, errSendCodeFirst), errors.Is(err, errLoginLost):
+	case errors.Is(err, errNotSignedIn), errors.Is(err, errSendCodeFirst), errors.Is(err, errLoginLost), errors.Is(err, errQRFirst):
 		return 409
 	case errors.Is(err, errTelegramUnreachable):
 		return 504
@@ -81,7 +82,10 @@ func explain(err error) error {
 	if err == nil || errors.Is(err, ErrPasswordNeeded) {
 		return err
 	}
-	if errors.Is(err, errTelegramUnreachable) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || errors.Is(err, errLoginClosed) {
+	if errors.Is(err, errLoginClosed) {
+		return statusErr(409, "The Telegram login connection closed. Show the QR code or send the login code again.")
+	}
+	if errors.Is(err, errTelegramUnreachable) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return errTelegramUnreachable
 	}
 	rpc, ok := tgerr.As(err)

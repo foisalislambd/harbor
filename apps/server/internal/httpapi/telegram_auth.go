@@ -144,6 +144,45 @@ func (a *API) telegramVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
+func (a *API) telegramQR(w http.ResponseWriter, r *http.Request) {
+	a.telegramQRCall(w, r, true)
+}
+
+func (a *API) telegramQRPoll(w http.ResponseWriter, r *http.Request) {
+	a.telegramQRCall(w, r, false)
+}
+
+func (a *API) telegramQRCall(w http.ResponseWriter, r *http.Request, fresh bool) {
+	dest, client, ok := a.telegramClient(w, r)
+	if !ok {
+		return
+	}
+	ctx, cancel := telegramContext(r)
+	defer cancel()
+	var status telegram.QRStatus
+	var err error
+	if fresh {
+		status, err = client.StartQR(ctx)
+	} else {
+		status, err = client.PollQR(ctx)
+	}
+	if client.PersistSession() {
+		if saveErr := a.store.UpdateDestinationSecret(ctx, dest.ID, client.Secret()); saveErr != nil {
+			writeError(w, http.StatusInternalServerError, "could not save the telegram session")
+			return
+		}
+	}
+	if err != nil {
+		writeTelegramError(w, err)
+		return
+	}
+	log.Printf("telegram qr destination=%s status=%s expires_in=%d", dest.ID, status.Status, status.ExpiresIn)
+	if status.Status == "ok" {
+		a.store.AddAudit(ctx, principalFrom(r).Actor(), "destination.telegram_login", dest.ID, status.Account)
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
 func (a *API) telegramSignIn(w http.ResponseWriter, r *http.Request) {
 	dest, client, ok := a.telegramClient(w, r)
 	if !ok {

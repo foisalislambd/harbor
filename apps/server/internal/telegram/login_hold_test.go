@@ -14,7 +14,7 @@ import (
 func TestLoginHoldReusesOneConnection(t *testing.T) {
 	hub := newLoginHub()
 	var connections int
-	hold := hub.start("acct", nil, func(ctx context.Context, storage *memorySession, serve func(context.Context, *telegram.Client) error) error {
+	hold := hub.start("acct", nil, nil, func(ctx context.Context, storage *memorySession, serve func(context.Context, *telegram.Client) error) error {
 		connections++
 		storage.data = []byte("key")
 		return serve(ctx, nil)
@@ -42,7 +42,7 @@ func TestLoginHoldReusesOneConnection(t *testing.T) {
 func TestLoginHoldStopsAStuckConnect(t *testing.T) {
 	hub := newLoginHub()
 	started := make(chan struct{})
-	hold := hub.start("acct", nil, func(ctx context.Context, _ *memorySession, _ func(context.Context, *telegram.Client) error) error {
+	hold := hub.start("acct", nil, nil, func(ctx context.Context, _ *memorySession, _ func(context.Context, *telegram.Client) error) error {
 		close(started)
 		<-ctx.Done()
 		return ctx.Err()

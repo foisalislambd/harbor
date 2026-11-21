@@ -209,6 +209,16 @@ export function messageFromFailedResponse(status: number, body: string): string 
   return `Request failed (${status})`;
 }
 
+export type TelegramQR = {
+  status: "qr" | "password" | "ok";
+  url?: string;
+  expires?: number;
+  expires_in?: number;
+  image?: string;
+  account_label?: string;
+  message?: string;
+};
+
 export type TelegramCode = {
   type: string;
   type_name?: string;

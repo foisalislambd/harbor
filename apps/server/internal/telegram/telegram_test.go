@@ -131,6 +131,9 @@ type fakeEngine struct {
 	deleted        []string
 	next           int
 	seenSession    string
+	qrFresh        bool
+	qrPassword     bool
+	qrDone         bool
 }
 
 func (f *fakeEngine) SendCode(_ context.Context, _ int, cred *credentials, _ string) (CodeStatus, error) {
@@ -175,6 +178,20 @@ func (f *fakeEngine) SignIn(_ context.Context, _ int, cred *credentials, _, _ st
 func (f *fakeEngine) Password(_ context.Context, _ int, cred *credentials, _, _ string) (string, error) {
 	cred.Session = []byte("ready")
 	return "Ada (@ada)", nil
+}
+
+func (f *fakeEngine) ExportQR(_ context.Context, _ int, cred *credentials, _ string, fresh bool) (QRStatus, error) {
+	f.qrFresh = fresh
+	if fresh {
+		cred.Session = []byte("qr-key")
+	}
+	if f.qrPassword {
+		return QRStatus{Status: "password", Message: "This account has a cloud password."}, nil
+	}
+	if f.qrDone {
+		return QRStatus{Status: "ok", Account: "Ada (@ada)"}, nil
+	}
+	return QRStatus{Status: "qr", URL: "tg://login?token=YWI", ExpiresIn: 30, Message: "scan"}, nil
 }
 
 func (f *fakeEngine) LogOut(context.Context, int, *credentials, string) error { return nil }

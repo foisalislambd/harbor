@@ -126,6 +126,8 @@ func (a *API) Handler() http.Handler {
 			r.Delete("/destinations/{destinationID}", a.deleteDestination)
 			r.Post("/destinations/{destinationID}/test", a.testDestination)
 			r.Post("/destinations/{destinationID}/telegram/code", a.telegramSendCode)
+			r.Post("/destinations/{destinationID}/telegram/qr", a.telegramQR)
+			r.Post("/destinations/{destinationID}/telegram/qr/poll", a.telegramQRPoll)
 			r.Post("/destinations/{destinationID}/telegram/resend", a.telegramResendCode)
 			r.Post("/destinations/{destinationID}/telegram/cancel", a.telegramCancelCode)
 			r.Post("/destinations/{destinationID}/telegram/email", a.telegramSendEmail)

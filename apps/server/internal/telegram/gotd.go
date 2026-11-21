@@ -67,7 +67,7 @@ func (m *memorySession) snapshot() []byte {
 
 func (g gotdEngine) run(ctx context.Context, apiID int, cred *credentials, fn func(context.Context, *telegram.Client) error) error {
 	storage := &memorySession{data: append([]byte(nil), cred.Session...)}
-	err := g.runStored(ctx, apiID, cred.APIHash, storage, false, fn)
+	err := g.runStored(ctx, apiID, cred.APIHash, storage, false, nil, fn)
 	if snap := storage.snapshot(); len(snap) > 0 {
 		cred.Session = snap
 	}
@@ -83,7 +83,7 @@ func (g gotdEngine) run(ctx context.Context, apiID int, cred *credentials, fn fu
 // runStored connects and then calls fn. Reaching Telegram is limited to authBudget
 // so a blocked datacenter cannot hold an HTTP request until a proxy times out.
 // After fn starts, ctx controls the rest of the call.
-func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, storage *memorySession, authCall bool, fn func(context.Context, *telegram.Client) error) error {
+func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, storage *memorySession, authCall bool, updates telegram.UpdateHandler, fn func(context.Context, *telegram.Client) error) error {
 	attempt, stop := context.WithCancel(ctx)
 	defer stop()
 	started := make(chan struct{})
@@ -116,7 +116,10 @@ func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, stor
 		DialTimeout:      10 * time.Second,
 		ExchangeTimeout:  10 * time.Second,
 		MigrationTimeout: 15 * time.Second,
-		NoUpdates:        true,
+		// QR login is the one call that subscribes: it has to see updateLoginToken.
+		// Every other call leaves updates off.
+		NoUpdates:     updates == nil,
+		UpdateHandler: updates,
 		ReconnectionBackoff: func() backoff.BackOff {
 			b := backoff.NewExponentialBackOff()
 			b.InitialInterval = 200 * time.Millisecond

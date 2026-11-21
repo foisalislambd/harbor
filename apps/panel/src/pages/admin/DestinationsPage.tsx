@@ -4,7 +4,7 @@ import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { ProviderLogo } from "@/components/provider-logo";
 import { dangerButtonClass, fieldClass, quietButtonClass } from "@/lib/fields";
-import { api, formatBytes, type Destination, type DestinationList, type StorageProvider, type StorageProviderList, type TelegramCode } from "@/lib/harbor-api";
+import { api, formatBytes, type Destination, type DestinationList, type StorageProvider, type StorageProviderList, type TelegramCode, type TelegramQR } from "@/lib/harbor-api";
 import { Cloud } from "lucide-react";
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -24,7 +24,9 @@ export default function DestinationsPage() {
   const flash = (location.state as { message?: string } | null)?.message ?? null;
   const [message, setMessage] = useState<string | null>(flash);
   const [loginID, setLoginID] = useState<string | null>(null);
+  const [loginKind, setLoginKind] = useState<"code" | "qr">("code");
   const [loginPhase, setLoginPhase] = useState<"code" | "password" | "email" | "email_code">("code");
+  const [qr, setQR] = useState<TelegramQR | null>(null);
   const [loginCode, setLoginCode] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
@@ -51,6 +53,37 @@ export default function DestinationsPage() {
     setItems(destinations.items);
     setProviders(catalog.items);
   }
+
+  useEffect(() => {
+    if (!loginID || loginKind !== "qr" || loginPhase === "password") return;
+    let cancelled = false;
+    const poll = () => {
+      void api<TelegramQR>(`/api/v1/destinations/${loginID}/telegram/qr/poll`, { method: "POST" })
+        .then((result) => {
+          if (cancelled) return;
+          if (result.status === "ok") {
+            setMessage(`${result.account_label || "Telegram"} is signed in.`);
+            setLoginID(null);
+            setQR(null);
+            return load();
+          }
+          if (result.status === "password") {
+            setLoginPhase("password");
+            setMessage(result.message || "This account has a cloud password.");
+            return;
+          }
+          setQR(result);
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : "Could not refresh the QR code");
+        });
+    };
+    const id = window.setInterval(poll, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [loginID, loginKind, loginPhase]);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,7 +238,9 @@ export default function DestinationsPage() {
                           destinationID={destination.id}
                           name={destination.name}
                           active={loginID === destination.id}
+                          kind={loginID === destination.id ? loginKind : "code"}
                           phase={loginPhase}
+                          qr={loginID === destination.id ? qr : null}
                           code={loginCode}
                           password={loginPassword}
                           email={loginEmail}
@@ -216,12 +251,29 @@ export default function DestinationsPage() {
                           onError={setError}
                           onMessage={setMessage}
                           onBegin={(status) => {
+                            setLoginKind("code");
+                            setQR(null);
                             setLoginID(destination.id);
                             setDelivery(status);
                             setLoginCode("");
                             setLoginPassword("");
                             setLoginEmail("");
                             setLoginPhase(status.type === "setup_email" ? "email" : "code");
+                          }}
+                          onBeginQR={(status) => {
+                            setLoginKind("qr");
+                            setDelivery(null);
+                            setQR(status);
+                            setLoginID(destination.id);
+                            setLoginCode("");
+                            setLoginPassword("");
+                            setLoginPhase(status.status === "password" ? "password" : "code");
+                            if (status.status === "ok") {
+                              setMessage(`${status.account_label || destination.name} is signed in.`);
+                              setLoginID(null);
+                              setQR(null);
+                              return load();
+                            }
                           }}
                           onDelivery={(status) => {
                             setDelivery(status);
@@ -232,11 +284,13 @@ export default function DestinationsPage() {
                           onDone={() => {
                             setLoginID(null);
                             setDelivery(null);
+                            setQR(null);
                             return load();
                           }}
                           onCancel={() => {
                             setLoginID(null);
                             setDelivery(null);
+                            setQR(null);
                           }}
                         />
                       )}
@@ -259,7 +313,9 @@ function TelegramLogin({
   destinationID,
   name,
   active,
+  kind,
   phase,
+  qr,
   code,
   password,
   email,
@@ -270,6 +326,7 @@ function TelegramLogin({
   onError,
   onMessage,
   onBegin,
+  onBeginQR,
   onDelivery,
   onPasswordPhase,
   onEmailCode,
@@ -279,7 +336,9 @@ function TelegramLogin({
   destinationID: string;
   name: string;
   active: boolean;
+  kind: "code" | "qr";
   phase: "code" | "password" | "email" | "email_code";
+  qr: TelegramQR | null;
   code: string;
   password: string;
   email: string;
@@ -290,6 +349,7 @@ function TelegramLogin({
   onError: Dispatch<SetStateAction<string | null>>;
   onMessage: (value: string) => void;
   onBegin: (status: TelegramCode) => void;
+  onBeginQR: (status: TelegramQR) => void;
   onDelivery: (status: TelegramCode) => void;
   onPasswordPhase: () => void;
   onEmailCode: () => void;
@@ -298,6 +358,13 @@ function TelegramLogin({
 }) {
   const [localError, setLocalError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    if (!active || kind !== "qr" || !qr?.expires) return;
+    const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, [active, kind, qr?.expires]);
+  const qrLeft = qr?.expires ? Math.max(0, qr.expires - now) : qr?.expires_in ?? 0;
   const fail = (err: unknown, fallback: string) => {
     const text = err instanceof Error ? err.message : fallback;
     setLocalError(text);
@@ -324,21 +391,69 @@ function TelegramLogin({
   };
   return (
     <>
-      <p className="text-xs text-gray-500">Telegram never delivers a login code to this new Harbor session. An in-app code arrives on a phone that is already signed in, in the chat named Telegram (777000). If Telegram answers auth.sentCodeTypeApp and leaves next_type empty, Resend cannot switch that to SMS. If chat 777000 stays empty, Telegram accepted the request and did not deliver the message. A new api_id does not change that. Harbor calls auth.cancelCode only when you press Cancel.</p>
+      <p className="text-xs text-gray-500">Telegram never delivers a login code to this new Harbor session. An in-app code arrives on a phone that is already signed in, in the chat named Telegram (777000). If that chat stays empty, sign in with the QR code instead: on the phone open Settings, Devices, Link Desktop Device, and scan it. A login code and a QR code are separate attempts.</p>
       {localError && <p className="text-sm text-error-500">{localError}</p>}
       {!active && (
-        <button
-          type="button"
-          className={quietButtonClass}
-          disabled={pending}
-          onClick={() => {
-            run(() => api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/code`, { method: "POST" })
-              .then(apply)
-              .catch((err: unknown) => fail(err, "Could not send a code")));
-          }}
-        >
-          {pending ? "Sending code..." : "Send login code"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={quietButtonClass}
+            disabled={pending}
+            onClick={() => {
+              run(() => api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/code`, { method: "POST" })
+                .then(apply)
+                .catch((err: unknown) => fail(err, "Could not send a code")));
+            }}
+          >
+            {pending ? "Sending code..." : "Send login code"}
+          </button>
+          <button
+            type="button"
+            className={quietButtonClass}
+            disabled={pending}
+            onClick={() => {
+              run(() => api<TelegramQR>(`/api/v1/destinations/${destinationID}/telegram/qr`, { method: "POST" })
+                .then((status) => {
+                  onMessage(status.message || "Scan the QR code from the Telegram app.");
+                  onBeginQR(status);
+                })
+                .catch((err: unknown) => fail(err, "Could not start QR login")));
+            }}
+          >
+            {pending ? "Starting QR..." : "Sign in with QR"}
+          </button>
+        </div>
+      )}
+      {active && kind === "qr" && phase !== "password" && qr?.status === "qr" && (
+        <div className="space-y-2">
+          <p className="text-sm text-gray-700 dark:text-gray-200">On the phone, open Telegram, then Settings, Devices, Link Desktop Device, and scan this code. It refreshes before it expires.</p>
+          {qr.image && <img src={qr.image} alt="Telegram login QR code" className="h-52 w-52 rounded-md bg-white p-2" />}
+          <p className="text-sm text-gray-500">Refreshes in {qrLeft}s</p>
+          <button type="button" className={quietButtonClass} disabled={pending} onClick={() => {
+            run(() => api(`/api/v1/destinations/${destinationID}/telegram/cancel`, { method: "POST" })
+              .then(() => {
+                onMessage(`QR login cancelled for ${name}.`);
+                onCancel();
+              })
+              .catch((err: unknown) => fail(err, "Could not cancel QR login")));
+          }}>
+            Cancel
+          </button>
+        </div>
+      )}
+      {active && kind === "qr" && phase === "password" && (
+        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
+          event.preventDefault();
+          run(() => api<{ status: string }>(`/api/v1/destinations/${destinationID}/telegram/login`, { method: "POST", body: JSON.stringify({ password }) })
+            .then(() => {
+              onMessage(`${name} is signed in.`);
+              return onDone();
+            })
+            .catch((err: unknown) => fail(err, "Could not confirm the password")));
+        }}>
+          <input className={fieldClass} type="password" value={password} onChange={(e) => onPassword(e.target.value)} placeholder="Cloud password" required />
+          <button className={quietButtonClass} type="submit" disabled={pending}>Confirm password</button>
+        </form>
       )}
       {active && delivery && (
         <div className="space-y-2">
