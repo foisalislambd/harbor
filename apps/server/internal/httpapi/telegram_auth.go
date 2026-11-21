@@ -36,7 +36,7 @@ func (a *API) telegramSendCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	log.Printf("telegram sentCode destination=%s type=%s next_type=%s timeout=%d", dest.ID, status.Type, status.NextType, status.Timeout)
+	log.Printf("telegram sentCode destination=%s type=%s next_type=%s timeout=%d dc=%d", dest.ID, status.TypeName, status.NextTypeName, status.Timeout, status.DC)
 	a.store.AddAudit(ctx, principalFrom(r).Actor(), "destination.telegram_code", dest.ID, dest.Name)
 	writeJSON(w, http.StatusOK, status)
 }
@@ -57,7 +57,7 @@ func (a *API) telegramResendCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	log.Printf("telegram resendCode destination=%s type=%s next_type=%s timeout=%d", dest.ID, status.Type, status.NextType, status.Timeout)
+	log.Printf("telegram resendCode destination=%s type=%s next_type=%s timeout=%d dc=%d", dest.ID, status.TypeName, status.NextTypeName, status.Timeout, status.DC)
 	writeJSON(w, http.StatusOK, status)
 }
 
@@ -127,7 +127,7 @@ func (a *API) telegramVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	log.Printf("telegram verifyEmail destination=%s type=%s next_type=%s timeout=%d", dest.ID, status.Type, status.NextType, status.Timeout)
+	log.Printf("telegram verifyEmail destination=%s type=%s next_type=%s timeout=%d dc=%d", dest.ID, status.TypeName, status.NextTypeName, status.Timeout, status.DC)
 	writeJSON(w, http.StatusOK, status)
 }
 

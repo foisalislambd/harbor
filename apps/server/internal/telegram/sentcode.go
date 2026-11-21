@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -11,8 +12,14 @@ import (
 // CodeStatus is the auth.sentCode result the panel shows. It does not include
 // the phone code hash.
 type CodeStatus struct {
-	Type         string `json:"type"`
+	// Type is a short name the panel uses to pick a form (app, setup_email, ...).
+	Type string `json:"type"`
+	// TypeName is the TL constructor, such as auth.sentCodeTypeSetUpEmailRequired.
+	TypeName     string `json:"type_name,omitempty"`
 	NextType     string `json:"next_type,omitempty"`
+	NextTypeName string `json:"next_type_name,omitempty"`
+	// DC is the datacenter the auth key was stored on after the call.
+	DC           int    `json:"dc,omitempty"`
 	Timeout      int    `json:"timeout,omitempty"`
 	Length       int    `json:"length,omitempty"`
 	EmailPattern string `json:"email_pattern,omitempty"`
@@ -32,10 +39,16 @@ func (s CodeStatus) needsLoginCode() bool {
 func applySentCode(cred *credentials, sent tg.AuthSentCodeClass) (CodeStatus, error) {
 	switch code := sent.(type) {
 	case *tg.AuthSentCode:
+		if code.Type == nil {
+			return CodeStatus{}, errors.New("telegram auth.sentCode did not include a type")
+		}
+		if code.PhoneCodeHash == "" {
+			return CodeStatus{}, errors.New("telegram auth.sentCode did not include a phone_code_hash")
+		}
 		cred.PhoneCodeHash = code.PhoneCodeHash
 		cred.Authorized = false
 		status := describeSentCode(code)
-		log.Printf("telegram auth.sentCode type=%s next_type=%s timeout=%d", status.Type, status.NextType, status.Timeout)
+		log.Printf("telegram auth.sentCode type=%s next_type=%s timeout=%d", status.TypeName, status.NextTypeName, status.Timeout)
 		return status, nil
 	case *tg.AuthSentCodeSuccess:
 		if authz, ok := code.Authorization.(*tg.AuthAuthorization); ok {
@@ -60,9 +73,10 @@ func applySentCode(cred *credentials, sent tg.AuthSentCodeClass) (CodeStatus, er
 }
 
 func describeSentCode(code *tg.AuthSentCode) CodeStatus {
-	status := CodeStatus{Type: sentTypeName(code.Type)}
+	status := CodeStatus{Type: sentTypeName(code.Type), TypeName: tlName(code.Type)}
 	if next, ok := code.GetNextType(); ok {
 		status.NextType = codeTypeName(next)
+		status.NextTypeName = tlName(next)
 	}
 	if timeout, ok := code.GetTimeout(); ok {
 		status.Timeout = timeout
@@ -160,6 +174,15 @@ func sentURL(kind tg.AuthSentCodeTypeClass) string {
 	return item.URL
 }
 
+func tlName(v any) string {
+	type named interface{ TypeName() string }
+	n, ok := v.(named)
+	if !ok || n == nil {
+		return ""
+	}
+	return n.TypeName()
+}
+
 func sentMessage(status CodeStatus) string {
 	var text string
 	switch status.Type {
@@ -208,6 +231,9 @@ func sentMessage(status CodeStatus) string {
 			wait = " If it does not arrive, resend it"
 		}
 		text += wait + " by " + strings.ReplaceAll(status.NextType, "_", " ") + "."
+	}
+	if status.TypeName != "" {
+		text = status.TypeName + ". " + text
 	}
 	return text
 }

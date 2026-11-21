@@ -16,7 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- A successful Telegram `auth.sendCode` now reports the real delivery (`app`, SMS, call, Fragment, login email, or email setup) instead of assuming a code reached the Telegram app. The panel can resend with `auth.resendCode`, cancel with `auth.cancelCode`, and set up the login email Telegram requires before it will send a code. The same auth key is kept for the code and the sign-in.
+- A successful Telegram `auth.sendCode` now shows the exact constructor (`auth.sentCodeTypeApp`, `auth.sentCodeTypeSetUpEmailRequired`, `auth.sentCodeTypeFragmentSms`, `auth.sentCodeTypeFirebaseSms`, and the others) plus the datacenter. Nothing is assumed to have reached the Telegram app. A new code starts a new auth key, datacenter migration happens before that code is accepted, and resend, email setup, and sign-in stay on that same key. The panel can resend with `auth.resendCode` and cancel with `auth.cancelCode`.
 - Requesting a Telegram login code stops after about 45 seconds, keeps that MTProto connection open until the code or cloud password is entered, and the panel shows Telegram's error instead of a proxy HTML page.
 
 ### Changed

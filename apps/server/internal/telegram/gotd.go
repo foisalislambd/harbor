@@ -5,9 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -124,10 +126,17 @@ func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, stor
 		},
 		Device: telegram.DeviceConfig{
 			DeviceModel:    "Harbor",
-			SystemVersion:  "Linux",
+			SystemVersion:  runtime.GOOS + "/" + runtime.GOARCH,
 			AppVersion:     harborAppVersion(),
 			SystemLangCode: "en",
 			LangCode:       "en",
+			// LangPack stays empty. Official packs such as "android" and
+			// "tdesktop" make Telegram expect a delivery path this server
+			// cannot finish, and it then reports success without a code.
+			Params: &tg.JSONObject{Value: []tg.JSONObjectValue{{
+				Key:   "tz_offset",
+				Value: &tg.JSONNumber{Value: 0},
+			}}},
 		},
 	})
 	err := waiter.Run(attempt, func(ctx context.Context) error {
@@ -143,21 +152,15 @@ func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, stor
 }
 
 func (g gotdEngine) SendCode(ctx context.Context, apiID int, cred *credentials, phone string) (CodeStatus, error) {
-	status, err := g.exchangeCode(ctx, apiID, phone, cred, true, func(ctx context.Context, client *telegram.Client) (tg.AuthSentCodeClass, error) {
+	// A new code gets a new auth key. An old unauthorized key can still be
+	// attached to a datacenter that does not own this phone, and auth.sendCode
+	// on that key can answer without delivering anything.
+	cred.Session = nil
+	cred.PhoneCodeHash = ""
+	cred.Authorized = false
+	return g.exchangeCode(ctx, apiID, phone, cred, true, func(ctx context.Context, client *telegram.Client) (tg.AuthSentCodeClass, error) {
 		return sendCodeOnDC(ctx, client, phone)
 	})
-	if err != nil || status.Type != "firebase_sms" || status.NextType == "" {
-		return status, err
-	}
-	// Official apps are the only clients that can finish Firebase SMS.
-	// A failed resend still returns the firebase result so the panel can
-	// show it and offer the next method.
-	resent, resendErr := g.ResendCode(ctx, apiID, cred, phone)
-	if resendErr != nil {
-		log.Printf("telegram firebase auth.resendCode: %v", resendErr)
-		return status, nil
-	}
-	return resent, nil
 }
 
 func (g gotdEngine) ResendCode(ctx context.Context, apiID int, cred *credentials, phone string) (CodeStatus, error) {
@@ -169,14 +172,10 @@ func (g gotdEngine) ResendCode(ctx context.Context, apiID int, cred *credentials
 			PhoneNumber:   phone,
 			PhoneCodeHash: cred.PhoneCodeHash,
 		})
-		if dc, ok := migrateDC(err); ok {
-			if mErr := client.MigrateTo(ctx, dc); mErr != nil {
-				return nil, err
-			}
-			sent, err = client.API().AuthResendCode(ctx, &tg.AuthResendCodeRequest{
-				PhoneNumber:   phone,
-				PhoneCodeHash: cred.PhoneCodeHash,
-			})
+		// The hash belongs to this auth key. Moving to another datacenter
+		// would create a new key and the resent code would not match it.
+		if _, ok := migrateDC(err); ok {
+			return nil, errors.New("Telegram asked for another datacenter while resending. Send a new code; the resend has to stay on the connection that requested the first code")
 		}
 		return sent, err
 	})
@@ -257,24 +256,54 @@ func (g gotdEngine) exchangeCode(ctx context.Context, apiID int, phone string, c
 		status, err = applySentCode(cred, sent)
 		return err
 	})
-	return status, err
+	if err != nil {
+		return status, err
+	}
+	status.DC = sessionDC(cred.Session)
+	if status.DC > 0 {
+		status.Message += fmt.Sprintf(" Datacenter %d, same login connection as the code.", status.DC)
+		log.Printf("telegram auth.sentCode dc=%d type=%s", status.DC, status.TypeName)
+	}
+	if cred.PhoneCodeHash != "" && len(cred.Session) == 0 {
+		return status, errors.New("telegram did not keep the login session, so this code cannot be confirmed")
+	}
+	return status, nil
 }
 
 // sendCodeOnDC calls auth.sendCode with empty codeSettings. Flags such as
 // allow_firebase, allow_flashcall, and allow_app_hash ask Telegram for a
 // delivery path this server cannot complete, so they stay unset.
+// PHONE_MIGRATE_X and NETWORK_MIGRATE_X are followed onto a new auth key,
+// and only that key's phone_code_hash is kept.
 func sendCodeOnDC(ctx context.Context, client *telegram.Client, phone string) (tg.AuthSentCodeClass, error) {
+	log.Printf("telegram auth.sendCode dc=%d", client.Config().ThisDC)
 	send := func() (tg.AuthSentCodeClass, error) {
 		return client.Auth().SendCode(ctx, phone, auth.SendCodeOptions{})
 	}
 	sent, err := send()
 	if dc, ok := migrateDC(err); ok {
+		log.Printf("telegram auth.sendCode migrate to dc=%d", dc)
 		if mErr := client.MigrateTo(ctx, dc); mErr != nil {
 			return nil, err
 		}
 		sent, err = send()
+		log.Printf("telegram auth.sendCode after migrate dc=%d", client.Config().ThisDC)
 	}
 	return sent, err
+}
+
+func sessionDC(raw []byte) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	data, err := (&session.Loader{Storage: &memorySession{data: append([]byte(nil), raw...)}}).Load(context.Background())
+	if err != nil || data == nil {
+		return 0
+	}
+	if data.DC > 0 {
+		return data.DC
+	}
+	return data.Config.ThisDC
 }
 
 func (g gotdEngine) SignIn(ctx context.Context, apiID int, cred *credentials, phone, code string) (string, error) {
@@ -284,11 +313,10 @@ func (g gotdEngine) SignIn(ctx context.Context, apiID int, cred *credentials, ph
 			return client.Auth().SignIn(ctx, phone, code, cred.PhoneCodeHash)
 		}
 		authz, err := sign()
-		if dc, ok := migrateDC(err); ok {
-			if mErr := client.MigrateTo(ctx, dc); mErr != nil {
-				return err
-			}
-			authz, err = sign()
+		// phone_code_hash is valid only on the auth key that called sendCode.
+		// Migrating here would replace that key and the code would not match.
+		if _, ok := migrateDC(err); ok {
+			return errors.New("Telegram asked for another datacenter while checking the code. Send a new code; it only works on the connection that requested it")
 		}
 		if errors.Is(err, auth.ErrPasswordAuthNeeded) {
 			return ErrPasswordNeeded

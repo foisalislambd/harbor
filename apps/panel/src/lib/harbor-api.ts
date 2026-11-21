@@ -211,7 +211,10 @@ export function messageFromFailedResponse(status: number, body: string): string 
 
 export type TelegramCode = {
   type: string;
+  type_name?: string;
   next_type?: string;
+  next_type_name?: string;
+  dc?: number;
   timeout?: number;
   length?: number;
   email_pattern?: string;

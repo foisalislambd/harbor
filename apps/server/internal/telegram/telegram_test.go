@@ -61,11 +61,16 @@ func TestLoginUploadAndDelete(t *testing.T) {
 	fake := &fakeEngine{passwordNeeded: true, files: map[int][]byte{}}
 	client.engine = fake
 	client.limit = 8
+	client.cred.Session = []byte("stale-auth-key")
+	client.cred.PhoneCodeHash = "stale-hash"
 	delivery, err := client.SendCode(context.Background())
-	if err != nil || delivery.Type != "app" || delivery.NextType != "sms" || client.cred.PhoneCodeHash == "" {
+	if err != nil || delivery.Type != "app" || delivery.TypeName != "auth.sentCodeTypeApp" || delivery.NextType != "sms" || client.cred.PhoneCodeHash == "" {
 		t.Fatalf("send code %+v %v hash %q", delivery, err, client.cred.PhoneCodeHash)
 	}
-	if !strings.Contains(delivery.Message, "777000") {
+	if fake.seenSession != "" || client.cred.PhoneCodeHash == "stale-hash" {
+		t.Fatalf("stale session %q hash %q", fake.seenSession, client.cred.PhoneCodeHash)
+	}
+	if !strings.Contains(delivery.Message, "auth.sentCodeTypeApp") || !strings.Contains(delivery.Message, "777000") {
 		t.Fatal(delivery.Message)
 	}
 	if _, err := client.SignIn(context.Background(), "12345"); !errors.Is(err, ErrPasswordNeeded) {
@@ -125,9 +130,11 @@ type fakeEngine struct {
 	captions       []string
 	deleted        []string
 	next           int
+	seenSession    string
 }
 
 func (f *fakeEngine) SendCode(_ context.Context, _ int, cred *credentials, _ string) (CodeStatus, error) {
+	f.seenSession = string(cred.Session)
 	cred.PhoneCodeHash = "code-hash"
 	cred.Session = []byte("key")
 	sent := &tg.AuthSentCode{Type: &tg.AuthSentCodeTypeApp{Length: 5}}

@@ -78,18 +78,20 @@ func (c *Client) Secret() string {
 	return raw
 }
 
-// SendCode asks Telegram to deliver a login code. An existing session is revoked first.
+// SendCode asks Telegram to deliver a login code. A signed-in session is
+// revoked first. Any other saved auth key is dropped so this code and the
+// later sign-in share one new key.
 func (c *Client) SendCode(ctx context.Context) (CodeStatus, error) {
 	if c.cred.Authorized {
 		if err := c.engine.LogOut(ctx, c.apiID, &c.cred, c.phone); err != nil {
 			return CodeStatus{}, err
 		}
-		c.cred.Session = nil
-		c.cred.Authorized = false
-		c.cred.User = ""
-		c.cred.PhoneCodeHash = ""
-		c.cred.Peer = nil
 	}
+	c.cred.Session = nil
+	c.cred.Authorized = false
+	c.cred.User = ""
+	c.cred.PhoneCodeHash = ""
+	c.cred.Peer = nil
 	return c.engine.SendCode(ctx, c.apiID, &c.cred, c.phone)
 }
 

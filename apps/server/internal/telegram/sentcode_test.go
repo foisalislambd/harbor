@@ -7,6 +7,7 @@ import (
 
 	"harbor/internal/store"
 
+	"github.com/gotd/td/session"
 	"github.com/gotd/td/tg"
 )
 
@@ -15,10 +16,10 @@ func TestDescribeSentCode(t *testing.T) {
 	app.SetNextType(&tg.AuthCodeTypeSMS{})
 	app.SetTimeout(60)
 	got := describeSentCode(app)
-	if got.Type != "app" || got.NextType != "sms" || got.Timeout != 60 || got.Length != 5 {
+	if got.Type != "app" || got.TypeName != "auth.sentCodeTypeApp" || got.NextType != "sms" || got.NextTypeName != "auth.codeTypeSms" || got.Timeout != 60 || got.Length != 5 {
 		t.Fatalf("%+v", got)
 	}
-	if !strings.Contains(got.Message, "777000") || !strings.Contains(got.Message, "60 seconds") || !strings.Contains(got.Message, "sms") {
+	if !strings.Contains(got.Message, "auth.sentCodeTypeApp") || !strings.Contains(got.Message, "777000") || !strings.Contains(got.Message, "60 seconds") || !strings.Contains(got.Message, "sms") {
 		t.Fatal(got.Message)
 	}
 
@@ -27,15 +28,16 @@ func TestDescribeSentCode(t *testing.T) {
 		t.Fatalf("%+v", email)
 	}
 	setup := describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeSetUpEmailRequired{}})
-	if setup.Type != "setup_email" || setup.needsLoginCode() || !strings.Contains(setup.Message, "login email") {
+	if setup.Type != "setup_email" || setup.TypeName != "auth.sentCodeTypeSetUpEmailRequired" || setup.needsLoginCode() || !strings.Contains(setup.Message, "login email") {
 		t.Fatalf("%+v", setup)
 	}
 	fragment := describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeFragmentSMS{URL: "https://fragment.com", Length: 6}})
-	if fragment.Type != "fragment_sms" || fragment.URL != "https://fragment.com" || !strings.Contains(fragment.Message, "https://fragment.com") {
+	if fragment.Type != "fragment_sms" || fragment.TypeName != "auth.sentCodeTypeFragmentSms" || fragment.URL != "https://fragment.com" || !strings.Contains(fragment.Message, "https://fragment.com") {
 		t.Fatalf("%+v", fragment)
 	}
-	if describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeFirebaseSMS{Length: 5}}).Type != "firebase_sms" {
-		t.Fatal("firebase")
+	firebase := describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeFirebaseSMS{Length: 5}})
+	if firebase.Type != "firebase_sms" || firebase.TypeName != "auth.sentCodeTypeFirebaseSms" || !strings.Contains(firebase.Message, "auth.sentCodeTypeFirebaseSms") {
+		t.Fatalf("%+v", firebase)
 	}
 	if describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeCall{Length: 5}}).Type != "call" {
 		t.Fatal("call")
@@ -77,5 +79,28 @@ func TestResendKeepsTheSession(t *testing.T) {
 	}
 	if err := client.CancelCode(context.Background()); err != nil || client.cred.PhoneCodeHash != "" {
 		t.Fatal(err)
+	}
+}
+
+func TestSentCodeRequiresTypeAndHash(t *testing.T) {
+	if _, err := applySentCode(&credentials{}, &tg.AuthSentCode{}); err == nil {
+		t.Fatal("expected a missing type")
+	}
+	if _, err := applySentCode(&credentials{}, &tg.AuthSentCode{Type: &tg.AuthSentCodeTypeApp{Length: 5}}); err == nil {
+		t.Fatal("expected a missing phone_code_hash")
+	}
+}
+
+func TestSessionDC(t *testing.T) {
+	storage := &memorySession{}
+	err := (&session.Loader{Storage: storage}).Save(context.Background(), &session.Data{DC: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sessionDC(storage.snapshot()); got != 4 {
+		t.Fatalf("dc %d", got)
+	}
+	if sessionDC(nil) != 0 || sessionDC([]byte("nope")) != 0 {
+		t.Fatal("empty session")
 	}
 }

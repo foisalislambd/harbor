@@ -317,7 +317,7 @@ function TelegramLogin({
   };
   return (
     <>
-      <p className="text-xs text-gray-500">Telegram never delivers a login code to this new Harbor session. An in-app code arrives on a phone that is already signed in, in the chat named Telegram (777000).</p>
+      <p className="text-xs text-gray-500">Telegram never delivers a login code to this new Harbor session. An in-app code arrives on a phone that is already signed in, in the chat named Telegram (777000). The response below is the exact Telegram type, such as auth.sentCodeTypeApp, auth.sentCodeTypeSetUpEmailRequired, auth.sentCodeTypeFragmentSms, or auth.sentCodeTypeFirebaseSms.</p>
       {localError && <p className="text-sm text-error-500">{localError}</p>}
       {!active && (
         <button
@@ -335,6 +335,12 @@ function TelegramLogin({
       )}
       {active && delivery && (
         <div className="space-y-2">
+          {delivery.type_name && (
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+              Telegram returned {delivery.type_name}
+              {delivery.dc ? ` on datacenter ${delivery.dc}` : ""}.
+            </p>
+          )}
           <p className="text-sm text-gray-700 dark:text-gray-200">{delivery.message}</p>
           {delivery.url && <a className="text-sm text-brand-600 underline" href={delivery.url} target="_blank" rel="noreferrer">{delivery.url}</a>}
           {phase === "email" && (
