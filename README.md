@@ -48,7 +48,7 @@ Harbor uploads with the MTProto API as your user account, the same way Telethon,
 1. Open [my.telegram.org/apps](https://my.telegram.org/apps) and create an application. Copy the api_id and api_hash. The api_id is a number. The api_hash is shown once in the form and then stored encrypted.
 2. In Harbor, open Destinations, choose Telegram, and enter the api_id, api_hash, and the phone number of the account that should send backups.
 3. Leave the target empty to use Saved Messages. Otherwise enter a public `@username`, an invite link, or the numeric id of a chat already on that account. A forum topic id is optional. An invite link joins the chat if you are not already in it.
-4. Save the destination, then choose Send login code. Enter the code Telegram delivers to the app, SMS, or a call. If the account has a cloud password, enter that next. Log out on the same card to call `auth.logOut` and delete the saved session.
+4. Save the destination, then choose Send login code. The code arrives inside the Telegram app, in the chat named Telegram. It is not an SMS unless Telegram says it sent one. Enter that code. If the account has a cloud password, enter that next. Log out on the same card to call `auth.logOut` and delete the saved session. Harbor keeps the sign-in connection open for a few minutes so the code and the password use the same session.
 5. Choose that destination on a project. Each backup is one document. The caption includes the project, backup name, kind, size, timestamp, and the SHA-256 of the whole file.
 
 A regular account can send one document of up to 2 GB (4000 parts of 512 KB). A Premium account can send 4 GB (8000 parts). Harbor reads the Premium flag on the signed-in user. Anything larger is split into numbered files named `harbor-<name>-partNN-of-NN.bin`. Download those parts in order and join them:
@@ -63,6 +63,8 @@ Files at or under the account limit are uploaded with `upload.saveBigFilePart` w
 When retention deletes a backup, Harbor calls `messages.deleteMessages` for Saved Messages, private chats, and basic groups, and `channels.deleteMessages` for channels and supergroups. Removing the destination leaves the messages in the chat.
 
 This session can send and read messages as that user. Keep the data directory as carefully as a password database, and log out if the account should stop being used. The api hash and session are never returned by the API.
+
+The server must be able to open outbound TCP port 443 to Telegram. Harbor stops a login attempt after about 45 seconds and returns Telegram's error, such as `PHONE_NUMBER_INVALID`, `API_ID_INVALID`, or `FLOOD_WAIT`, instead of waiting until a proxy gives up. If Harbor is behind Cloudflare or another reverse proxy, that proxy's timeout should be longer than 45 seconds. A 524, 502, or 504 page from the proxy means the request never reached a finished Telegram response.
 
 ## Tech stack
 

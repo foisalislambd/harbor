@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"harbor/internal/store"
 	"harbor/internal/telegram"
@@ -11,13 +13,21 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// telegramContext outlives the browser connection being closed, and it ends
+// before a proxy such as Cloudflare replaces a slow response with an HTML page.
+func telegramContext(r *http.Request) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(r.Context()), 50*time.Second)
+}
+
 func (a *API) telegramSendCode(w http.ResponseWriter, r *http.Request) {
 	dest, client, ok := a.telegramClient(w, r)
 	if !ok {
 		return
 	}
-	delivery, err := client.SendCode(r.Context())
-	if saveErr := a.store.UpdateDestinationSecret(r.Context(), dest.ID, client.Secret()); saveErr != nil {
+	ctx, cancel := telegramContext(r)
+	defer cancel()
+	delivery, err := client.SendCode(ctx)
+	if saveErr := a.store.UpdateDestinationSecret(ctx, dest.ID, client.Secret()); saveErr != nil {
 		writeError(w, http.StatusInternalServerError, "could not save the telegram session")
 		return
 	}
@@ -25,7 +35,7 @@ func (a *API) telegramSendCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	a.store.AddAudit(r.Context(), principalFrom(r).Actor(), "destination.telegram_code", dest.ID, dest.Name)
+	a.store.AddAudit(ctx, principalFrom(r).Actor(), "destination.telegram_code", dest.ID, dest.Name)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "code", "delivery": delivery})
 }
 
@@ -41,31 +51,33 @@ func (a *API) telegramSignIn(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &body) {
 		return
 	}
+	ctx, cancel := telegramContext(r)
+	defer cancel()
 	code := strings.TrimSpace(body.Code)
 	password := strings.TrimSpace(body.Password)
 	var name string
 	var err error
 	switch {
 	case password != "" && code == "":
-		name, err = client.Password(r.Context(), password)
+		name, err = client.Password(ctx, password)
 	case code != "":
-		name, err = client.SignIn(r.Context(), code)
+		name, err = client.SignIn(ctx, code)
 		if errors.Is(err, telegram.ErrPasswordNeeded) {
 			if password == "" {
-				if saveErr := a.store.UpdateDestinationSecret(r.Context(), dest.ID, client.Secret()); saveErr != nil {
+				if saveErr := a.store.UpdateDestinationSecret(ctx, dest.ID, client.Secret()); saveErr != nil {
 					writeError(w, http.StatusInternalServerError, "could not save the telegram session")
 					return
 				}
 				writeJSON(w, http.StatusOK, map[string]string{"status": "password"})
 				return
 			}
-			name, err = client.Password(r.Context(), password)
+			name, err = client.Password(ctx, password)
 		}
 	default:
 		writeError(w, http.StatusBadRequest, "enter the login code")
 		return
 	}
-	if saveErr := a.store.UpdateDestinationSecret(r.Context(), dest.ID, client.Secret()); saveErr != nil {
+	if saveErr := a.store.UpdateDestinationSecret(ctx, dest.ID, client.Secret()); saveErr != nil {
 		writeError(w, http.StatusInternalServerError, "could not save the telegram session")
 		return
 	}
@@ -73,7 +85,7 @@ func (a *API) telegramSignIn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	a.store.AddAudit(r.Context(), principalFrom(r).Actor(), "destination.telegram_login", dest.ID, name)
+	a.store.AddAudit(ctx, principalFrom(r).Actor(), "destination.telegram_login", dest.ID, name)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "account_label": name})
 }
 
@@ -82,8 +94,10 @@ func (a *API) telegramLogout(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	err := client.LogOut(r.Context())
-	if saveErr := a.store.UpdateDestinationSecret(r.Context(), dest.ID, client.Secret()); saveErr != nil {
+	ctx, cancel := telegramContext(r)
+	defer cancel()
+	err := client.LogOut(ctx)
+	if saveErr := a.store.UpdateDestinationSecret(ctx, dest.ID, client.Secret()); saveErr != nil {
 		writeError(w, http.StatusInternalServerError, "could not save the telegram session")
 		return
 	}
@@ -91,7 +105,7 @@ func (a *API) telegramLogout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	a.store.AddAudit(r.Context(), principalFrom(r).Actor(), "destination.telegram_logout", dest.ID, dest.Name)
+	a.store.AddAudit(ctx, principalFrom(r).Actor(), "destination.telegram_logout", dest.ID, dest.Name)
 	w.WriteHeader(http.StatusNoContent)
 }
 

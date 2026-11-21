@@ -1,0 +1,28 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { loginCodeMessage, messageFromFailedResponse } from "./harbor-api.ts";
+
+const cloudflare = `<!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US">`;
+
+test("a proxy HTML page becomes a status message", () => {
+  assert.equal(messageFromFailedResponse(524, cloudflare), "Proxy returned 524 timeout");
+  assert.equal(messageFromFailedResponse(502, "<html><body>bad gateway</body></html>"), "Proxy returned 502 bad gateway");
+  assert.equal(messageFromFailedResponse(504, "gateway timeout"), "Proxy returned 504 gateway timeout");
+  assert.equal(messageFromFailedResponse(500, "nope"), "Proxy returned 500");
+  assert.equal(messageFromFailedResponse(400, "nope"), "Request failed (400)");
+});
+
+test("a JSON error is shown as Harbor wrote it", () => {
+  assert.equal(
+    messageFromFailedResponse(502, JSON.stringify({ error: "Telegram rejected that phone number (PHONE_NUMBER_INVALID). Use the international form, such as +15551234567" })),
+    "Telegram rejected that phone number (PHONE_NUMBER_INVALID). Use the international form, such as +15551234567",
+  );
+});
+
+test("the login code is described as an in-app message", () => {
+  assert.match(loginCodeMessage("app"), /Telegram app/);
+  assert.match(loginCodeMessage(), /not a text message/);
+  assert.match(loginCodeMessage("sms"), /SMS/);
+  assert.match(loginCodeMessage("call"), /calling/);
+  assert.match(loginCodeMessage("already"), /already signed in/);
+});
