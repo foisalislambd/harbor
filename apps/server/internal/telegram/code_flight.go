@@ -2,10 +2,10 @@ package telegram
 
 import (
 	"context"
-	"log"
 	"sync"
 
 	"github.com/gotd/td/telegram"
+	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/tg"
 )
 
@@ -85,7 +85,6 @@ func (g gotdEngine) SendCode(ctx context.Context, apiID int, cred *credentials, 
 	key := loginKey(apiID, phone, cred.APIHash)
 	flight, leader := codeSends.begin(key)
 	if !leader {
-		log.Printf("telegram auth.sendCode joined an in-flight request")
 		select {
 		case <-ctx.Done():
 			return CodeStatus{}, redact(explain(ctx.Err()), *cred)
@@ -110,7 +109,9 @@ func (g gotdEngine) SendCode(ctx context.Context, apiID int, cred *credentials, 
 	cred.User = ""
 	cred.Peer = nil
 	status, err := g.exchangeCode(ctx, apiID, phone, cred, true, func(ctx context.Context, client *telegram.Client) (tg.AuthSentCodeClass, error) {
-		return sendCodeOnDC(ctx, client, phone)
+		// Empty options. allow_flashcall and allow_app_hash ask for a delivery
+		// this server cannot complete. Datacenter migration is handled by gotd.
+		return client.Auth().SendCode(ctx, phone, auth.SendCodeOptions{})
 	})
 	flight.status = status
 	flight.err = err

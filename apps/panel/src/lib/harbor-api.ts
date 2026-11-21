@@ -221,13 +221,6 @@ export type TelegramQR = {
 
 export type TelegramCode = {
   type: string;
-  type_name?: string;
-  next_type?: string;
-  next_type_name?: string;
-  dc?: number;
-  timeout?: number;
-  length?: number;
-  email_pattern?: string;
   url?: string;
   message: string;
 };

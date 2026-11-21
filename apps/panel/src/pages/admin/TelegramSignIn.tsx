@@ -185,16 +185,6 @@ export function TelegramSignIn({
               <button className={quietButtonClass} type="submit" disabled={pending}>Continue</button>
             </form>
           )}
-          {delivery?.next_type && phase !== "email" && phase !== "email_code" && (
-            <button type="button" className={quietButtonClass} disabled={pending} onClick={() => {
-              void run(async () => {
-                const status = await api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/resend`, { method: "POST" });
-                setDelivery(status);
-              }, "Could not send the code again");
-            }}>
-              Send again
-            </button>
-          )}
         </div>
       </details>
     </div>

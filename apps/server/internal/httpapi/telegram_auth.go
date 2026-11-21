@@ -49,48 +49,9 @@ func (a *API) telegramSendCode(w http.ResponseWriter, r *http.Request) {
 		writeTelegramError(w, err)
 		return
 	}
-	log.Printf("telegram sentCode destination=%s type=%s next_type=%s timeout=%d dc=%d", dest.ID, status.TypeName, status.NextTypeName, status.Timeout, status.DC)
+	log.Printf("telegram code destination=%s type=%s", dest.ID, status.Type)
 	a.store.AddAudit(ctx, principalFrom(r).Actor(), "destination.telegram_code", dest.ID, dest.Name)
 	writeJSON(w, http.StatusOK, status)
-}
-
-func (a *API) telegramResendCode(w http.ResponseWriter, r *http.Request) {
-	dest, client, ok := a.telegramClient(w, r)
-	if !ok {
-		return
-	}
-	ctx, cancel := telegramContext(r)
-	defer cancel()
-	status, err := client.ResendCode(ctx)
-	if saveErr := a.store.UpdateDestinationSecret(ctx, dest.ID, client.Secret()); saveErr != nil {
-		writeError(w, http.StatusInternalServerError, "could not save the telegram session")
-		return
-	}
-	if err != nil {
-		writeTelegramError(w, err)
-		return
-	}
-	log.Printf("telegram resendCode destination=%s type=%s next_type=%s timeout=%d dc=%d", dest.ID, status.TypeName, status.NextTypeName, status.Timeout, status.DC)
-	writeJSON(w, http.StatusOK, status)
-}
-
-func (a *API) telegramCancelCode(w http.ResponseWriter, r *http.Request) {
-	dest, client, ok := a.telegramClient(w, r)
-	if !ok {
-		return
-	}
-	ctx, cancel := telegramContext(r)
-	defer cancel()
-	err := client.CancelCode(ctx)
-	if saveErr := a.store.UpdateDestinationSecret(ctx, dest.ID, client.Secret()); saveErr != nil {
-		writeError(w, http.StatusInternalServerError, "could not save the telegram session")
-		return
-	}
-	if err != nil {
-		writeTelegramError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) telegramSendEmail(w http.ResponseWriter, r *http.Request) {
@@ -140,7 +101,7 @@ func (a *API) telegramVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		writeTelegramError(w, err)
 		return
 	}
-	log.Printf("telegram verifyEmail destination=%s type=%s next_type=%s timeout=%d dc=%d", dest.ID, status.TypeName, status.NextTypeName, status.Timeout, status.DC)
+	log.Printf("telegram verifyEmail destination=%s type=%s", dest.ID, status.Type)
 	writeJSON(w, http.StatusOK, status)
 }
 

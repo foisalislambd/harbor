@@ -64,7 +64,7 @@ func TestLoginUploadAndDelete(t *testing.T) {
 	client.cred.Session = []byte("stale-auth-key")
 	client.cred.PhoneCodeHash = "stale-hash"
 	delivery, err := client.SendCode(context.Background())
-	if err != nil || delivery.Type != "app" || delivery.TypeName != "auth.sentCodeTypeApp" || delivery.NextType != "sms" || client.cred.PhoneCodeHash == "" {
+	if err != nil || delivery.Type != "app" || client.cred.PhoneCodeHash == "" {
 		t.Fatalf("send code %+v %v hash %q", delivery, err, client.cred.PhoneCodeHash)
 	}
 	if fake.seenSession != "" || client.cred.PhoneCodeHash == "stale-hash" {
@@ -140,23 +140,7 @@ func (f *fakeEngine) SendCode(_ context.Context, _ int, cred *credentials, _ str
 	f.seenSession = string(cred.Session)
 	cred.PhoneCodeHash = "code-hash"
 	cred.Session = []byte("key")
-	sent := &tg.AuthSentCode{Type: &tg.AuthSentCodeTypeApp{Length: 5}}
-	sent.SetNextType(&tg.AuthCodeTypeSMS{})
-	sent.SetTimeout(30)
-	return describeSentCode(sent), nil
-}
-
-func (f *fakeEngine) ResendCode(_ context.Context, _ int, cred *credentials, _ string) (CodeStatus, error) {
-	if cred.PhoneCodeHash == "" || string(cred.Session) == "" {
-		return CodeStatus{}, errors.New("missing session")
-	}
-	cred.PhoneCodeHash = "resent-hash"
-	return CodeStatus{Type: "sms", Message: "Telegram sent the code by SMS."}, nil
-}
-
-func (f *fakeEngine) CancelCode(_ context.Context, _ int, cred *credentials, _ string) error {
-	cred.PhoneCodeHash = ""
-	return nil
+	return describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeApp{Length: 5}}), nil
 }
 
 func (f *fakeEngine) SendLoginEmail(context.Context, int, *credentials, string, string) (string, int, error) {
@@ -164,7 +148,7 @@ func (f *fakeEngine) SendLoginEmail(context.Context, int, *credentials, string, 
 }
 
 func (f *fakeEngine) VerifyLoginEmail(context.Context, int, *credentials, string, string) (CodeStatus, error) {
-	return CodeStatus{Type: "email", EmailPattern: "a*@example.com", Message: "email"}, nil
+	return CodeStatus{Type: "email", Message: "Enter the code sent to a*@example.com."}, nil
 }
 
 func (f *fakeEngine) SignIn(_ context.Context, _ int, cred *credentials, _, _ string) (string, error) {

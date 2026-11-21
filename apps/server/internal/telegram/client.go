@@ -17,8 +17,6 @@ var ErrPasswordNeeded = errors.New("telegram cloud password required")
 
 type engine interface {
 	SendCode(ctx context.Context, apiID int, cred *credentials, phone string) (CodeStatus, error)
-	ResendCode(ctx context.Context, apiID int, cred *credentials, phone string) (CodeStatus, error)
-	CancelCode(ctx context.Context, apiID int, cred *credentials, phone string) error
 	SendLoginEmail(ctx context.Context, apiID int, cred *credentials, phone, email string) (string, int, error)
 	VerifyLoginEmail(ctx context.Context, apiID int, cred *credentials, phone, code string) (CodeStatus, error)
 	SignIn(ctx context.Context, apiID int, cred *credentials, phone, code string) (string, error)
@@ -102,20 +100,6 @@ func (c *Client) PersistSession() bool {
 	return c.cred.persist
 }
 
-// ResendCode asks Telegram for the next delivery method on the same auth key.
-func (c *Client) ResendCode(ctx context.Context) (CodeStatus, error) {
-	return c.engine.ResendCode(ctx, c.apiID, &c.cred, c.phone)
-}
-
-// CancelCode drops the pending login code and its connection.
-func (c *Client) CancelCode(ctx context.Context) error {
-	if err := c.engine.CancelCode(ctx, c.apiID, &c.cred, c.phone); err != nil {
-		return err
-	}
-	c.cred.PhoneCodeHash = ""
-	return nil
-}
-
 // SendLoginEmail starts the login-email check Telegram requires before a code.
 func (c *Client) SendLoginEmail(ctx context.Context, email string) (string, int, error) {
 	email = strings.TrimSpace(email)
@@ -149,8 +133,7 @@ func (c *Client) SignIn(ctx context.Context, code string) (string, error) {
 	return name, nil
 }
 
-// StartQR begins a QR login on a new auth key. The phone scans tg://login,
-// which does not use the login code in chat 777000.
+// StartQR begins a QR login on a new auth key. The phone scans tg://login.
 func (c *Client) StartQR(ctx context.Context) (QRStatus, error) {
 	if c.cred.Authorized && len(c.cred.Session) > 0 {
 		return QRStatus{Status: "ok", Account: c.cred.User, Message: c.cred.User + " is signed in."}, nil

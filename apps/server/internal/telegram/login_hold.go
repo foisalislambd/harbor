@@ -16,11 +16,8 @@ import (
 const (
 	// authBudget stays under Cloudflare's 100 second proxy timeout.
 	authBudget = 45 * time.Second
-	// loginKeepAlive keeps the MTProto connection used for auth.sendCode open
-	// until the code or the cloud password is submitted. When it ends, Harbor
-	// closes that connection. It does not call auth.cancelCode. Telegram
-	// deletes a login code only when auth.cancelCode runs, which is the
-	// Cancel button.
+	// loginKeepAlive keeps the MTProto connection for this login open until
+	// the code or the cloud password is submitted.
 	loginKeepAlive = 3 * time.Minute
 )
 
