@@ -1,3 +1,4 @@
+import { BrandMark } from "@/components/brand-mark";
 import { adminConfig, adminNavItems, type AdminNavItem } from "@/config/admin.config";
 import {
   SIDEBAR_WIDTH_COLLAPSED,
@@ -62,9 +63,7 @@ export function AdminSidebar() {
           onClick={closeMobileSidebar}
           className={`flex min-w-0 flex-1 items-center gap-2 ${!showLabels ? "justify-center" : ""}`}
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-sm font-bold text-white">
-            {brand.letter}
-          </span>
+          <BrandMark className="h-8 w-8" />
           {showLabels && (
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">

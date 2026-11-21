@@ -1,5 +1,5 @@
 import { useAdminAuth } from "@/components/admin/auth/admin-auth-provider";
-import { adminConfig } from "@/config/admin.config";
+import { BrandMark } from "@/components/brand-mark";
 import { fieldClass } from "@/lib/fields";
 import { api } from "@/lib/harbor-api";
 import { Eye, EyeOff, Lock, Mail, User } from "lucide-react";
@@ -55,9 +55,7 @@ export function AdminLoginForm() {
   return (
     <div className="flex min-h-dvh flex-col justify-center px-5 py-10 sm:px-10 lg:px-14 xl:px-16">
       <div className="mx-auto w-full max-w-[400px]">
-        <div className="mb-6 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-500 text-base font-bold text-white lg:hidden">
-          {adminConfig.brand.letter}
-        </div>
+        <BrandMark className="mb-6 h-11 w-11 lg:hidden" />
         <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-[1.75rem]">
           {needsSetup ? "Create the owner account" : "Sign in"}
         </h1>

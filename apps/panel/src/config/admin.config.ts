@@ -13,7 +13,6 @@ export const adminConfig = {
   brand: {
     name: "Harbor",
     tagline: "Self-hosted backups",
-    letter: "H",
     siteUrl: "",
     loginDescription:
       "One place for every application's backups. Run it on your PC, a VPS, or in Docker.",
