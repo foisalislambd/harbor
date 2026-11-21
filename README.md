@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/brand/harbor-logo-transparent.png" alt="Harbor" width="160">
+</p>
+
 # Harbor
 
 Self-hosted backup vault. One Go process and a SQLite database store archives, database dumps, and files from as many applications as you want.
