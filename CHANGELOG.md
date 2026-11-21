@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Panel pages use the full width beside the sidebar, with the same padding on narrow and wide screens.
 - The sidebar stays in the page row on wide screens, so destination cards and the other pages start to the right of it instead of underneath. On a narrow screen it stays off to the side until the menu is opened.
+- A missing API response says to refresh and try again, instead of showing a raw request status.
 
 ## [0.2.0] - 2026-11-20
 

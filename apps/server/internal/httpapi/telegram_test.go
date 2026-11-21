@@ -16,6 +16,25 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+func TestTelegramQRRoutesAreRegistered(t *testing.T) {
+	handler := newTestAPI(t).Handler()
+	for _, path := range []string{
+		"/api/v1/destinations/dst_missing/telegram/qr",
+		"/api/v1/destinations/dst_missing/telegram/qr/poll",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.Header.Set("X-Harbor-Request", "1")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code == http.StatusNotFound {
+			t.Fatalf("%s is not registered: %d %s", path, rec.Code, rec.Body.String())
+		}
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %d %s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestTelegramDestinationHidesAPIHash(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(dir)

@@ -206,7 +206,8 @@ export function messageFromFailedResponse(status: number, body: string): string 
   if (status === 502) return "Proxy returned 502 bad gateway";
   if (status === 522) return "Proxy returned 522 connection timed out";
   if (status >= 500) return `Proxy returned ${status}`;
-  return `Request failed (${status})`;
+  if (status === 404) return "That could not be found. Refresh the page and try again.";
+  return "Something went wrong. Try again.";
 }
 
 export type TelegramQR = {
