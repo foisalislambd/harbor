@@ -16,7 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- A successful Telegram `auth.sendCode` now shows the exact constructor (`auth.sentCodeTypeApp`, `auth.sentCodeTypeSetUpEmailRequired`, `auth.sentCodeTypeFragmentSms`, `auth.sentCodeTypeFirebaseSms`, and the others) plus the datacenter. Nothing is assumed to have reached the Telegram app. A new code starts a new auth key, datacenter migration happens before that code is accepted, and resend, email setup, and sign-in stay on that same key. A second click while a code is already being requested waits for that attempt instead of creating another auth key. Telegram rejecting the phone, the code, or the api_id is returned as a 4xx JSON error. The panel can resend with `auth.resendCode` and cancel with `auth.cancelCode`.
+- Telegram sign-in leads with a QR code (`auth.exportLoginToken`, then `auth.importLoginToken` when the account is on another datacenter, then `auth.checkPassword` when a cloud password is required). Phone login is one `auth.sendCode`, then `auth.signIn`, on the same connection. A second click waits for the request already in flight. The panel does not show protocol names, and it does not offer resend or cancel.
+- The Destinations page lists each destination with its status and Test, Edit, and Delete actions. Adding one starts from a service grid, then a short form. Telegram sign-in leads with the QR code. The page does not show protocol names or datacenter numbers.
 - Requesting a Telegram login code stops after about 45 seconds, keeps that MTProto connection open until the code or cloud password is entered, and the panel shows Telegram's error instead of a proxy HTML page.
 
 ### Changed
@@ -24,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The API guide uses the address the panel is open on. Set `HARBOR_PUBLIC_URL` when that address should be a fixed origin instead. Health reports it as `public_url`.
 
 - Panel pages use the full width beside the sidebar, with the same padding on narrow and wide screens.
+- The sidebar stays in the page row on wide screens, so destination cards and the other pages start to the right of it instead of underneath. On a narrow screen it stays off to the side until the menu is opened.
+- A missing API response says to refresh and try again, instead of showing a raw request status.
 
 ## [0.2.0] - 2026-11-20
 

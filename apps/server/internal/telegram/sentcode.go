@@ -4,27 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/gotd/td/tg"
 )
 
-// CodeStatus is the auth.sentCode result the panel shows. It does not include
-// the phone code hash.
+// CodeStatus is what the panel needs after auth.sendCode. The phone code hash
+// stays on the session and is not returned.
 type CodeStatus struct {
-	// Type is a short name the panel uses to pick a form (app, setup_email, ...).
-	Type string `json:"type"`
-	// TypeName is the TL constructor, such as auth.sentCodeTypeSetUpEmailRequired.
-	TypeName     string `json:"type_name,omitempty"`
-	NextType     string `json:"next_type,omitempty"`
-	NextTypeName string `json:"next_type_name,omitempty"`
-	// DC is the datacenter the auth key was stored on after the call.
-	DC           int    `json:"dc,omitempty"`
-	Timeout      int    `json:"timeout,omitempty"`
-	Length       int    `json:"length,omitempty"`
-	EmailPattern string `json:"email_pattern,omitempty"`
-	URL          string `json:"url,omitempty"`
-	Message      string `json:"message"`
+	// Type picks the form: app, sms, setup_email, and the other delivery kinds.
+	Type    string `json:"type"`
+	URL     string `json:"url,omitempty"`
+	Message string `json:"message"`
 }
 
 func (s CodeStatus) needsLoginCode() bool {
@@ -48,7 +38,7 @@ func applySentCode(cred *credentials, sent tg.AuthSentCodeClass) (CodeStatus, er
 		cred.PhoneCodeHash = code.PhoneCodeHash
 		cred.Authorized = false
 		status := describeSentCode(code)
-		log.Printf("telegram auth.sentCode type=%s next_type=%s timeout=%d", status.TypeName, status.NextTypeName, status.Timeout)
+		log.Printf("telegram auth.sentCode type=%s", status.Type)
 		return status, nil
 	case *tg.AuthSentCodeSuccess:
 		if authz, ok := code.Authorization.(*tg.AuthAuthorization); ok {
@@ -73,18 +63,11 @@ func applySentCode(cred *credentials, sent tg.AuthSentCodeClass) (CodeStatus, er
 }
 
 func describeSentCode(code *tg.AuthSentCode) CodeStatus {
-	status := CodeStatus{Type: sentTypeName(code.Type), TypeName: tlName(code.Type)}
-	if next, ok := code.GetNextType(); ok {
-		status.NextType = codeTypeName(next)
-		status.NextTypeName = tlName(next)
+	status := CodeStatus{
+		Type:    sentTypeName(code.Type),
+		URL:     sentURL(code.Type),
+		Message: sentMessage(sentTypeName(code.Type), sentEmailPattern(code.Type), sentURL(code.Type)),
 	}
-	if timeout, ok := code.GetTimeout(); ok {
-		status.Timeout = timeout
-	}
-	status.Length = sentLength(code.Type)
-	status.EmailPattern = sentEmailPattern(code.Type)
-	status.URL = sentURL(code.Type)
-	status.Message = sentMessage(status)
 	return status
 }
 
@@ -117,47 +100,6 @@ func sentTypeName(kind tg.AuthSentCodeTypeClass) string {
 	}
 }
 
-func codeTypeName(kind tg.AuthCodeTypeClass) string {
-	switch kind.(type) {
-	case *tg.AuthCodeTypeSMS:
-		return "sms"
-	case *tg.AuthCodeTypeCall:
-		return "call"
-	case *tg.AuthCodeTypeFlashCall:
-		return "flash_call"
-	case *tg.AuthCodeTypeMissedCall:
-		return "missed_call"
-	case *tg.AuthCodeTypeFragmentSMS:
-		return "fragment_sms"
-	default:
-		if kind == nil {
-			return ""
-		}
-		return "other"
-	}
-}
-
-func sentLength(kind tg.AuthSentCodeTypeClass) int {
-	switch item := kind.(type) {
-	case *tg.AuthSentCodeTypeApp:
-		return item.Length
-	case *tg.AuthSentCodeTypeSMS:
-		return item.Length
-	case *tg.AuthSentCodeTypeCall:
-		return item.Length
-	case *tg.AuthSentCodeTypeMissedCall:
-		return item.Length
-	case *tg.AuthSentCodeTypeFragmentSMS:
-		return item.Length
-	case *tg.AuthSentCodeTypeEmailCode:
-		return item.Length
-	case *tg.AuthSentCodeTypeFirebaseSMS:
-		return item.Length
-	default:
-		return 0
-	}
-}
-
 func sentEmailPattern(kind tg.AuthSentCodeTypeClass) string {
 	item, ok := kind.(*tg.AuthSentCodeTypeEmailCode)
 	if !ok {
@@ -174,66 +116,37 @@ func sentURL(kind tg.AuthSentCodeTypeClass) string {
 	return item.URL
 }
 
-func tlName(v any) string {
-	type named interface{ TypeName() string }
-	n, ok := v.(named)
-	if !ok || n == nil {
-		return ""
-	}
-	return n.TypeName()
-}
-
-func sentMessage(status CodeStatus) string {
-	var text string
-	switch status.Type {
+func sentMessage(kind, emailPattern, url string) string {
+	switch kind {
 	case "app":
-		text = "Telegram sent the code to your other logged-in devices, in the service chat named Telegram (777000). This Harbor session does not receive it. Open Telegram on a phone that is already signed in to this number."
-	case "sms":
-		text = "Telegram sent the code by SMS."
+		return "Enter the code from the Telegram app on your phone."
+	case "sms", "sms_word", "sms_phrase":
+		return "Enter the code from the text message."
 	case "call":
-		text = "Telegram is calling this number and will read the code."
+		return "Answer the call and write down the code."
 	case "flash_call":
-		text = "Telegram will flash-call this number. The calling phone number is the code."
+		return "The incoming phone number is the code."
 	case "missed_call":
-		text = "Telegram will call and hang up. The last digits of that phone number are the code."
+		return "The last digits of the missed call are the code."
 	case "fragment_sms":
-		text = "Telegram sent the code through Fragment."
-		if status.URL != "" {
-			text += " Open " + status.URL + ", sign in with the wallet for this number, and read the code there."
-		} else {
-			text += " Sign in at fragment.com with the wallet for this number and read the code there."
+		if url != "" {
+			return "Open the link and read the code there."
 		}
+		return "Open Fragment and read the code there."
 	case "email":
-		if status.EmailPattern != "" {
-			text = "Telegram sent the login code to the login email " + status.EmailPattern + "."
-		} else {
-			text = "Telegram sent the login code to the login email on this account."
+		if emailPattern != "" {
+			return "Enter the code sent to " + emailPattern + "."
 		}
+		return "Enter the code sent to your email."
 	case "setup_email":
-		text = "Telegram will not send a login code until this number has a login email. Enter an email you can open. Telegram sends a confirmation code there, and then the login code."
+		return "Enter an email address you can open."
 	case "firebase_sms":
-		text = "Telegram asked for a Firebase SMS check that only official mobile apps can finish. Resend the code to use the next method."
-	case "sms_word":
-		text = "Telegram sent an SMS containing one word. That word is the code."
-	case "sms_phrase":
-		text = "Telegram sent an SMS containing a phrase. That phrase is the code."
+		return "Telegram could not text this number. Use the QR code instead."
+	case "payment":
+		return "Telegram asked for a paid login that this app cannot finish. Use the QR code instead."
+	case "already":
+		return "This account is already signed in."
 	default:
-		text = "Telegram answered auth.sentCode with type " + status.Type + "."
+		return "Enter the code Telegram sent you."
 	}
-	if status.Length > 0 && status.Type != "setup_email" && status.Type != "flash_call" {
-		text += fmt.Sprintf(" It is %d characters.", status.Length)
-	}
-	if status.NextType != "" {
-		wait := ""
-		if status.Timeout > 0 {
-			wait = fmt.Sprintf(" If it does not arrive within %d seconds, resend it", status.Timeout)
-		} else {
-			wait = " If it does not arrive, resend it"
-		}
-		text += wait + " by " + strings.ReplaceAll(status.NextType, "_", " ") + "."
-	}
-	if status.TypeName != "" {
-		text = status.TypeName + ". " + text
-	}
-	return text
 }

@@ -9,7 +9,8 @@ test("a proxy HTML page becomes a status message", () => {
   assert.equal(messageFromFailedResponse(502, "<html><body>bad gateway</body></html>"), "Proxy returned 502 bad gateway");
   assert.equal(messageFromFailedResponse(504, "gateway timeout"), "Proxy returned 504 gateway timeout");
   assert.equal(messageFromFailedResponse(500, "nope"), "Proxy returned 500");
-  assert.equal(messageFromFailedResponse(400, "nope"), "Request failed (400)");
+  assert.equal(messageFromFailedResponse(400, "nope"), "Something went wrong. Try again.");
+  assert.equal(messageFromFailedResponse(404, "404 page not found"), "That could not be found. Refresh the page and try again.");
 });
 
 test("a JSON error is shown as Harbor wrote it", () => {

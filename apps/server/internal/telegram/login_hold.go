@@ -9,14 +9,15 @@ import (
 	"time"
 
 	"github.com/gotd/td/telegram"
+	"github.com/gotd/td/tg"
 	"github.com/gotd/td/tgerr"
 )
 
 const (
 	// authBudget stays under Cloudflare's 100 second proxy timeout.
 	authBudget = 45 * time.Second
-	// loginKeepAlive keeps the MTProto connection used for auth.sendCode open
-	// until the code or the cloud password is submitted.
+	// loginKeepAlive keeps the MTProto connection for this login open until
+	// the code or the cloud password is submitted.
 	loginKeepAlive = 3 * time.Minute
 )
 
@@ -31,6 +32,7 @@ type loginHold struct {
 	calls   chan holdCall
 	cancel  context.CancelFunc
 	closed  chan struct{}
+	qr      *qrPending
 }
 
 type loginRunner func(ctx context.Context, storage *memorySession, serve func(context.Context, *telegram.Client) error) error
@@ -79,7 +81,7 @@ func (h *loginHub) drop(key string) {
 	<-item.closed
 }
 
-func (h *loginHub) start(key string, session []byte, run loginRunner) *loginHold {
+func (h *loginHub) start(key string, session []byte, qr *qrPending, run loginRunner) *loginHold {
 	h.drop(key)
 	ctx, cancel := context.WithTimeout(context.Background(), loginKeepAlive)
 	item := &loginHold{
@@ -87,6 +89,7 @@ func (h *loginHub) start(key string, session []byte, run loginRunner) *loginHold
 		calls:   make(chan holdCall),
 		cancel:  cancel,
 		closed:  make(chan struct{}),
+		qr:      qr,
 	}
 	h.mu.Lock()
 	h.items[key] = item
@@ -135,14 +138,27 @@ func (s *loginHold) do(ctx context.Context, fn func(context.Context, *telegram.C
 }
 
 func (g gotdEngine) authCall(ctx context.Context, apiID int, phone string, cred *credentials, fresh bool, fn func(context.Context, *telegram.Client) error) error {
+	return g.holdCall(ctx, apiID, phone, cred, fresh, nil, fn)
+}
+
+func (g gotdEngine) holdCall(ctx context.Context, apiID int, phone string, cred *credentials, fresh bool, qr *qrPending, fn func(context.Context, *telegram.Client) error) error {
 	key := loginKey(apiID, phone, cred.APIHash)
 	hold := authSessions.get(key)
 	if hold == nil && !fresh && len(cred.Session) == 0 {
 		return errLoginLost
 	}
 	if hold == nil || fresh {
-		hold = authSessions.start(key, cred.Session, func(ctx context.Context, storage *memorySession, serve func(context.Context, *telegram.Client) error) error {
-			return g.runStored(ctx, apiID, cred.APIHash, storage, true, func(ctx context.Context, client *telegram.Client) error {
+		var updates telegram.UpdateHandler
+		if qr != nil {
+			updates = telegram.UpdateHandlerFunc(func(_ context.Context, u tg.UpdatesClass) error {
+				if loginTokenUpdate(u) {
+					qr.markLogged()
+				}
+				return nil
+			})
+		}
+		hold = authSessions.start(key, cred.Session, qr, func(ctx context.Context, storage *memorySession, serve func(context.Context, *telegram.Client) error) error {
+			return g.runStored(ctx, apiID, cred.APIHash, storage, true, updates, func(ctx context.Context, client *telegram.Client) error {
 				return serve(ctx, client)
 			})
 		})

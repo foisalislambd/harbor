@@ -5,9 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
-	"log"
 	"os"
 	"runtime"
 	"strconv"
@@ -67,7 +65,7 @@ func (m *memorySession) snapshot() []byte {
 
 func (g gotdEngine) run(ctx context.Context, apiID int, cred *credentials, fn func(context.Context, *telegram.Client) error) error {
 	storage := &memorySession{data: append([]byte(nil), cred.Session...)}
-	err := g.runStored(ctx, apiID, cred.APIHash, storage, false, fn)
+	err := g.runStored(ctx, apiID, cred.APIHash, storage, false, nil, fn)
 	if snap := storage.snapshot(); len(snap) > 0 {
 		cred.Session = snap
 	}
@@ -83,7 +81,7 @@ func (g gotdEngine) run(ctx context.Context, apiID int, cred *credentials, fn fu
 // runStored connects and then calls fn. Reaching Telegram is limited to authBudget
 // so a blocked datacenter cannot hold an HTTP request until a proxy times out.
 // After fn starts, ctx controls the rest of the call.
-func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, storage *memorySession, authCall bool, fn func(context.Context, *telegram.Client) error) error {
+func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, storage *memorySession, authCall bool, updates telegram.UpdateHandler, fn func(context.Context, *telegram.Client) error) error {
 	attempt, stop := context.WithCancel(ctx)
 	defer stop()
 	started := make(chan struct{})
@@ -116,7 +114,10 @@ func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, stor
 		DialTimeout:      10 * time.Second,
 		ExchangeTimeout:  10 * time.Second,
 		MigrationTimeout: 15 * time.Second,
-		NoUpdates:        true,
+		// QR login is the one call that subscribes: it has to see updateLoginToken.
+		// Every other call leaves updates off.
+		NoUpdates:     updates == nil,
+		UpdateHandler: updates,
 		ReconnectionBackoff: func() backoff.BackOff {
 			b := backoff.NewExponentialBackOff()
 			b.InitialInterval = 200 * time.Millisecond
@@ -130,9 +131,6 @@ func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, stor
 			AppVersion:     harborAppVersion(),
 			SystemLangCode: "en",
 			LangCode:       "en",
-			// LangPack stays empty. Official packs such as "android" and
-			// "tdesktop" make Telegram expect a delivery path this server
-			// cannot finish, and it then reports success without a code.
 			Params: &tg.JSONObject{Value: []tg.JSONObjectValue{{
 				Key:   "tz_offset",
 				Value: &tg.JSONNumber{Value: 0},
@@ -147,48 +145,6 @@ func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, stor
 	})
 	if ctx.Err() == nil && errors.Is(err, context.Canceled) {
 		return errTelegramUnreachable
-	}
-	return err
-}
-
-func (g gotdEngine) ResendCode(ctx context.Context, apiID int, cred *credentials, phone string) (CodeStatus, error) {
-	if cred.PhoneCodeHash == "" {
-		return CodeStatus{}, errSendCodeFirst
-	}
-	return g.exchangeCode(ctx, apiID, phone, cred, false, func(ctx context.Context, client *telegram.Client) (tg.AuthSentCodeClass, error) {
-		sent, err := client.API().AuthResendCode(ctx, &tg.AuthResendCodeRequest{
-			PhoneNumber:   phone,
-			PhoneCodeHash: cred.PhoneCodeHash,
-		})
-		// The hash belongs to this auth key. Moving to another datacenter
-		// would create a new key and the resent code would not match it.
-		if _, ok := migrateDC(err); ok {
-			return nil, errors.New("Telegram asked for another datacenter while resending. Send a new code; the resend has to stay on the connection that requested the first code")
-		}
-		return sent, err
-	})
-}
-
-func (g gotdEngine) CancelCode(ctx context.Context, apiID int, cred *credentials, phone string) error {
-	key := loginKey(apiID, phone, cred.APIHash)
-	if cred.PhoneCodeHash == "" {
-		authSessions.drop(key)
-		return nil
-	}
-	err := g.authCall(ctx, apiID, phone, cred, false, func(ctx context.Context, client *telegram.Client) error {
-		_, err := client.API().AuthCancelCode(ctx, &tg.AuthCancelCodeRequest{
-			PhoneNumber:   phone,
-			PhoneCodeHash: cred.PhoneCodeHash,
-		})
-		if err != nil && !tgerr.Is(err, "PHONE_CODE_EXPIRED", "PHONE_CODE_HASH_EMPTY") {
-			return err
-		}
-		return nil
-	})
-	cred.PhoneCodeHash = ""
-	authSessions.drop(key)
-	if err != nil && strings.Contains(err.Error(), "session for this code is gone") {
-		return nil
 	}
 	return err
 }
@@ -247,65 +203,16 @@ func (g gotdEngine) exchangeCode(ctx context.Context, apiID int, phone string, c
 	if err != nil {
 		return status, err
 	}
-	status.DC = sessionDC(cred.Session)
-	if status.DC > 0 {
-		status.Message += fmt.Sprintf(" Datacenter %d, same login connection as the code.", status.DC)
-		log.Printf("telegram auth.sentCode dc=%d type=%s", status.DC, status.TypeName)
-	}
 	if cred.PhoneCodeHash != "" && len(cred.Session) == 0 {
 		return status, errors.New("telegram did not keep the login session, so this code cannot be confirmed")
 	}
 	return status, nil
 }
 
-// sendCodeOnDC calls auth.sendCode with empty codeSettings. Flags such as
-// allow_firebase, allow_flashcall, and allow_app_hash ask Telegram for a
-// delivery path this server cannot complete, so they stay unset.
-// PHONE_MIGRATE_X and NETWORK_MIGRATE_X are followed onto a new auth key,
-// and only that key's phone_code_hash is kept.
-func sendCodeOnDC(ctx context.Context, client *telegram.Client, phone string) (tg.AuthSentCodeClass, error) {
-	log.Printf("telegram auth.sendCode dc=%d", client.Config().ThisDC)
-	send := func() (tg.AuthSentCodeClass, error) {
-		return client.Auth().SendCode(ctx, phone, auth.SendCodeOptions{})
-	}
-	sent, err := send()
-	if dc, ok := migrateDC(err); ok {
-		log.Printf("telegram auth.sendCode migrate to dc=%d", dc)
-		if mErr := client.MigrateTo(ctx, dc); mErr != nil {
-			return nil, err
-		}
-		sent, err = send()
-		log.Printf("telegram auth.sendCode after migrate dc=%d", client.Config().ThisDC)
-	}
-	return sent, err
-}
-
-func sessionDC(raw []byte) int {
-	if len(raw) == 0 {
-		return 0
-	}
-	data, err := (&session.Loader{Storage: &memorySession{data: append([]byte(nil), raw...)}}).Load(context.Background())
-	if err != nil || data == nil {
-		return 0
-	}
-	if data.DC > 0 {
-		return data.DC
-	}
-	return data.Config.ThisDC
-}
-
 func (g gotdEngine) SignIn(ctx context.Context, apiID int, cred *credentials, phone, code string) (string, error) {
 	var name string
 	err := g.authCall(ctx, apiID, phone, cred, false, func(ctx context.Context, client *telegram.Client) error {
-		sign := func() (*tg.AuthAuthorization, error) {
-			return client.Auth().SignIn(ctx, phone, code, cred.PhoneCodeHash)
-		}
-		authz, err := sign()
-		// phone_code_hash is valid only on the auth key that called sendCode.
-		// Migrating here would replace that key and the code would not match.
-		if _, ok := migrateDC(err); ok {
-			return errors.New("Telegram asked for another datacenter while checking the code. Send a new code; it only works on the connection that requested it")
-		}
+		authz, err := client.Auth().SignIn(ctx, phone, code, cred.PhoneCodeHash)
 		if errors.Is(err, auth.ErrPasswordAuthNeeded) {
 			return ErrPasswordNeeded
 		}

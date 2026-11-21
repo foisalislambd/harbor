@@ -14,7 +14,7 @@ import (
 func TestLoginHoldReusesOneConnection(t *testing.T) {
 	hub := newLoginHub()
 	var connections int
-	hold := hub.start("acct", nil, func(ctx context.Context, storage *memorySession, serve func(context.Context, *telegram.Client) error) error {
+	hold := hub.start("acct", nil, nil, func(ctx context.Context, storage *memorySession, serve func(context.Context, *telegram.Client) error) error {
 		connections++
 		storage.data = []byte("key")
 		return serve(ctx, nil)
@@ -42,7 +42,7 @@ func TestLoginHoldReusesOneConnection(t *testing.T) {
 func TestLoginHoldStopsAStuckConnect(t *testing.T) {
 	hub := newLoginHub()
 	started := make(chan struct{})
-	hold := hub.start("acct", nil, func(ctx context.Context, _ *memorySession, _ func(context.Context, *telegram.Client) error) error {
+	hold := hub.start("acct", nil, nil, func(ctx context.Context, _ *memorySession, _ func(context.Context, *telegram.Client) error) error {
 		close(started)
 		<-ctx.Done()
 		return ctx.Err()
@@ -65,10 +65,10 @@ func TestExplainTelegramErrors(t *testing.T) {
 		err  error
 		want string
 	}{
-		{tgerr.New(400, "PHONE_NUMBER_INVALID"), "PHONE_NUMBER_INVALID"},
-		{tgerr.New(400, "API_ID_INVALID"), "API_ID_INVALID"},
+		{tgerr.New(400, "PHONE_NUMBER_INVALID"), "rejected that phone number"},
+		{tgerr.New(400, "API_ID_INVALID"), "API ID or API hash"},
 		{tgerr.New(420, "FLOOD_WAIT_32"), "32 seconds"},
-		{tgerr.New(303, "PHONE_MIGRATE_2"), "PHONE_MIGRATE_2"},
+		{tgerr.New(303, "PHONE_MIGRATE_2"), "switch servers"},
 		{context.DeadlineExceeded, "timed out reaching Telegram"},
 	}
 	for _, tc := range cases {
@@ -76,13 +76,6 @@ func TestExplainTelegramErrors(t *testing.T) {
 		if got == nil || !strings.Contains(got.Error(), tc.want) {
 			t.Fatalf("%v -> %v", tc.err, got)
 		}
-	}
-	dc, ok := migrateDC(tgerr.New(303, "PHONE_MIGRATE_2"))
-	if !ok || dc != 2 {
-		t.Fatalf("migrate %d %v", dc, ok)
-	}
-	if _, ok := migrateDC(tgerr.New(400, "PHONE_NUMBER_INVALID")); ok {
-		t.Fatal("not a migration")
 	}
 	if !errors.Is(explain(ErrPasswordNeeded), ErrPasswordNeeded) {
 		t.Fatal("password error was rewritten")
@@ -120,7 +113,7 @@ func TestSendCodeFlightJoins(t *testing.T) {
 		joined <- flight
 	}()
 	<-started
-	leader.status = CodeStatus{Type: "app", TypeName: "auth.sentCodeTypeApp"}
+	leader.status = CodeStatus{Type: "app"}
 	cred := &credentials{Session: []byte("same-key"), PhoneCodeHash: "hash", persist: true}
 	codeSends.finish(key, leader, cred)
 	flight := <-joined

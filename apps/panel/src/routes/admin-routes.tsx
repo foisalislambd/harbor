@@ -24,7 +24,9 @@ export const zenPanelAdminRoute = (
       <Route path="projects/:projectId" element={<ProjectDetailPage />} />
       <Route path="backups" element={<BackupsPage />} />
       <Route path="destinations" element={<DestinationsPage />} />
+      <Route path="destinations/new" element={<DestinationNewPage />} />
       <Route path="destinations/new/:providerId" element={<DestinationNewPage />} />
+      <Route path="destinations/:destinationId/edit" element={<DestinationNewPage />} />
       <Route path="activity" element={<ActivityPage />} />
       <Route path="guide" element={<GuidePage />} />
       <Route path="settings" element={<SettingsPage />} />

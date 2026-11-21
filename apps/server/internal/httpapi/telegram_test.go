@@ -16,6 +16,25 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+func TestTelegramQRRoutesAreRegistered(t *testing.T) {
+	handler := newTestAPI(t).Handler()
+	for _, path := range []string{
+		"/api/v1/destinations/dst_missing/telegram/qr",
+		"/api/v1/destinations/dst_missing/telegram/qr/poll",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.Header.Set("X-Harbor-Request", "1")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code == http.StatusNotFound {
+			t.Fatalf("%s is not registered: %d %s", path, rec.Code, rec.Body.String())
+		}
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %d %s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestTelegramDestinationHidesAPIHash(t *testing.T) {
 	dir := t.TempDir()
 	st, err := store.Open(dir)
@@ -59,5 +78,19 @@ func TestTelegramDestinationHidesAPIHash(t *testing.T) {
 	}
 	if !strings.HasPrefix(stored, "enc:v1:") || strings.Contains(stored, hash) {
 		t.Fatalf("secret at rest: %s", stored)
+	}
+	var id string
+	if err := db.QueryRow(`SELECT id FROM destinations`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"name":"Phone","provider":"telegram","account_id":"+15551234567","access_key_id":"123456","endpoint":"@harbor"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/destinations/"+id, strings.NewReader(string(raw)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Harbor-Request", "1")
+	req.Header.Set("Cookie", cookie(setup))
+	renamed := httptest.NewRecorder()
+	handler.ServeHTTP(renamed, req)
+	if renamed.Code != http.StatusOK || strings.Contains(renamed.Body.String(), hash) || !strings.Contains(renamed.Body.String(), `"name":"Phone"`) {
+		t.Fatalf("rename %d %s", renamed.Code, renamed.Body.String())
 	}
 }
