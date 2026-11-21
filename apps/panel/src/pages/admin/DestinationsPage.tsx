@@ -324,7 +324,7 @@ function TelegramLogin({
   };
   return (
     <>
-      <p className="text-xs text-gray-500">Telegram never delivers a login code to this new Harbor session. An in-app code arrives on a phone that is already signed in, in the chat named Telegram (777000). The response below is the exact Telegram type, such as auth.sentCodeTypeApp, auth.sentCodeTypeSetUpEmailRequired, auth.sentCodeTypeFragmentSms, or auth.sentCodeTypeFirebaseSms.</p>
+      <p className="text-xs text-gray-500">Telegram never delivers a login code to this new Harbor session. An in-app code arrives on a phone that is already signed in, in the chat named Telegram (777000). If Telegram answers auth.sentCodeTypeApp and leaves next_type empty, Resend cannot switch that to SMS. If chat 777000 stays empty, Telegram accepted the request and did not deliver the message. A new api_id does not change that. Harbor calls auth.cancelCode only when you press Cancel.</p>
       {localError && <p className="text-sm text-error-500">{localError}</p>}
       {!active && (
         <button
@@ -349,6 +349,9 @@ function TelegramLogin({
             </p>
           )}
           <p className="text-sm text-gray-700 dark:text-gray-200">{delivery.message}</p>
+          {!delivery.next_type && delivery.type !== "setup_email" && delivery.type !== "payment" && delivery.type !== "already" && (
+            <p className="text-sm text-gray-700 dark:text-gray-200">Resend is unavailable because Telegram did not return next_type.</p>
+          )}
           {delivery.url && <a className="text-sm text-brand-600 underline" href={delivery.url} target="_blank" rel="noreferrer">{delivery.url}</a>}
           {phase === "email" && (
             <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {

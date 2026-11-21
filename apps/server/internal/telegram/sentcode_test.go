@@ -48,6 +48,10 @@ func TestDescribeSentCode(t *testing.T) {
 	if describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeMissedCall{Prefix: "12", Length: 4}}).Type != "missed_call" {
 		t.Fatal("missed")
 	}
+	appOnly := describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeApp{Length: 5}, PhoneCodeHash: "hash"})
+	if appOnly.NextType != "" || !strings.Contains(appOnly.Message, "next_type is empty") || !strings.Contains(appOnly.Message, "cannot switch this to SMS") || !strings.Contains(appOnly.Message, "auth.cancelCode") {
+		t.Fatal(appOnly.Message)
+	}
 }
 
 func TestResendKeepsTheSession(t *testing.T) {

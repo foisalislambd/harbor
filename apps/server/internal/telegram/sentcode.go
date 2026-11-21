@@ -187,7 +187,10 @@ func sentMessage(status CodeStatus) string {
 	var text string
 	switch status.Type {
 	case "app":
-		text = "Telegram sent the code to your other logged-in devices, in the service chat named Telegram (777000). This Harbor session does not receive it. Open Telegram on a phone that is already signed in to this number."
+		text = "Telegram returned auth.sentCodeTypeApp. The code is a service message in the chat named Telegram (777000) on devices that are already signed in. This Harbor session does not receive it."
+		if status.NextType == "" {
+			text += " next_type is empty, so Resend cannot switch this to SMS. If chat 777000 stays empty, Telegram accepted the request and did not deliver the message. A new api_id does not change that. Harbor does not call auth.cancelCode unless you press Cancel."
+		}
 	case "sms":
 		text = "Telegram sent the code by SMS."
 	case "call":
@@ -231,6 +234,8 @@ func sentMessage(status CodeStatus) string {
 			wait = " If it does not arrive, resend it"
 		}
 		text += wait + " by " + strings.ReplaceAll(status.NextType, "_", " ") + "."
+	} else if status.Type != "app" && status.Type != "setup_email" && status.Type != "already" && status.Type != "payment" {
+		text += " Telegram did not set next_type, so Resend cannot switch the delivery to SMS."
 	}
 	if status.TypeName != "" {
 		text = status.TypeName + ". " + text

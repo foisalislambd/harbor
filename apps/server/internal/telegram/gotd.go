@@ -270,12 +270,18 @@ func sendCodeOnDC(ctx context.Context, client *telegram.Client, phone string) (t
 	}
 	sent, err := send()
 	if dc, ok := migrateDC(err); ok {
+		// gotd normally does this inside the call: PHONE_MIGRATE zeroes the
+		// auth key, opens a new key on the destination datacenter, and repeats
+		// auth.sendCode there. This branch is the same step when that error
+		// is still visible. It is not auth.exportAuthorization.
 		log.Printf("telegram auth.sendCode migrate to dc=%d", dc)
 		if mErr := client.MigrateTo(ctx, dc); mErr != nil {
 			return nil, err
 		}
 		sent, err = send()
-		log.Printf("telegram auth.sendCode after migrate dc=%d", client.Config().ThisDC)
+	}
+	if err == nil {
+		log.Printf("telegram auth.sendCode finished dc=%d", client.Config().ThisDC)
 	}
 	return sent, err
 }
