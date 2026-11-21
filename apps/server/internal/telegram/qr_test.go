@@ -1,7 +1,10 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"image/png"
 	"strings"
 	"testing"
 	"time"
@@ -16,12 +19,45 @@ func TestQRTokenURLAndRefresh(t *testing.T) {
 	if !strings.HasPrefix(token.URL(), "tg://login?token=") || strings.Contains(token.URL(), " ") {
 		t.Fatal(token.URL())
 	}
-	image, err := qrPNG(token)
-	if err != nil || !strings.HasPrefix(image, "data:image/png;base64,") {
-		t.Fatalf("png %v %q", err, image)
+	imageURL, err := qrPNG(token)
+	if err != nil || !strings.HasPrefix(imageURL, "data:image/png;base64,") {
+		t.Fatalf("png %v %q", err, imageURL)
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(imageURL, "data:image/png;base64,"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bounds := img.Bounds()
+	minX, minY, maxX, maxY := bounds.Max.X, bounds.Max.Y, bounds.Min.X, bounds.Min.Y
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			if r+g+b > 0x8000*3 {
+				continue
+			}
+			if x < minX {
+				minX = x
+			}
+			if y < minY {
+				minY = y
+			}
+			if x > maxX {
+				maxX = x
+			}
+			if y > maxY {
+				maxY = y
+			}
+		}
+	}
+	if maxX-minX < bounds.Dx()*3/4 || maxY-minY < bounds.Dy()*3/4 {
+		t.Fatalf("qr occupies %dx%d inside %dx%d", maxX-minX, maxY-minY, bounds.Dx(), bounds.Dy())
 	}
 	pending := newQRPending()
-	pending.storeToken(token.URL(), image, token.Expires())
+	pending.storeToken(token.URL(), imageURL, token.Expires())
 	if _, ok := pending.cached(); !ok {
 		t.Fatal("fresh token should stay on screen")
 	}
@@ -30,7 +66,7 @@ func TestQRTokenURLAndRefresh(t *testing.T) {
 		t.Fatal("accepted token must be exported again")
 	}
 	pending.takeLogged()
-	pending.storeToken(token.URL(), image, time.Now().Add(3*time.Second))
+	pending.storeToken(token.URL(), imageURL, time.Now().Add(3*time.Second))
 	if _, ok := pending.cached(); ok {
 		t.Fatal("token near expiry must refresh")
 	}

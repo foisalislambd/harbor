@@ -1,12 +1,9 @@
 package telegram
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
-	"image"
-	"image/png"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -266,33 +263,11 @@ func errorsIsPassword(err error) bool {
 }
 
 func qrPNG(token qrlogin.Token) (string, error) {
-	img, err := token.Image(qr.M)
+	// rsc.io/qr's image.Image reports a scaled size but only paints the
+	// unscaled modules in the top-left corner. PNG() draws the full code.
+	code, err := qr.Encode(token.URL(), qr.M)
 	if err != nil {
 		return "", err
 	}
-	scaled := scaleImage(img, 8)
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, scaled); err != nil {
-		return "", err
-	}
-	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes()), nil
-}
-
-func scaleImage(src image.Image, factor int) image.Image {
-	if factor < 1 {
-		factor = 1
-	}
-	bounds := src.Bounds()
-	dst := image.NewRGBA(image.Rect(0, 0, bounds.Dx()*factor, bounds.Dy()*factor))
-	for y := 0; y < bounds.Dy(); y++ {
-		for x := 0; x < bounds.Dx(); x++ {
-			color := src.At(bounds.Min.X+x, bounds.Min.Y+y)
-			for dy := 0; dy < factor; dy++ {
-				for dx := 0; dx < factor; dx++ {
-					dst.Set(x*factor+dx, y*factor+dy, color)
-				}
-			}
-		}
-	}
-	return dst
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(code.PNG()), nil
 }
