@@ -16,7 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Requesting a Telegram login code no longer waits forever on a blocked datacenter connection. The attempt stops after about 45 seconds, the same MTProto connection stays open until the code or cloud password is entered, and the panel shows Telegram's error instead of a proxy HTML page. The code is delivered in the Telegram app, in the chat named Telegram, unless Telegram chooses SMS or a call.
+- A successful Telegram `auth.sendCode` now reports the real delivery (`app`, SMS, call, Fragment, login email, or email setup) instead of assuming a code reached the Telegram app. The panel can resend with `auth.resendCode`, cancel with `auth.cancelCode`, and set up the login email Telegram requires before it will send a code. The same auth key is kept for the code and the sign-in.
+- Requesting a Telegram login code stops after about 45 seconds, keeps that MTProto connection open until the code or cloud password is entered, and the panel shows Telegram's error instead of a proxy HTML page.
 
 ### Changed
 

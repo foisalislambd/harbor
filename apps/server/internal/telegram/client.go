@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"strings"
 
 	"harbor/internal/copier"
 	"harbor/internal/store"
@@ -15,7 +16,11 @@ import (
 var ErrPasswordNeeded = errors.New("telegram cloud password required")
 
 type engine interface {
-	SendCode(ctx context.Context, apiID int, cred *credentials, phone string) (string, error)
+	SendCode(ctx context.Context, apiID int, cred *credentials, phone string) (CodeStatus, error)
+	ResendCode(ctx context.Context, apiID int, cred *credentials, phone string) (CodeStatus, error)
+	CancelCode(ctx context.Context, apiID int, cred *credentials, phone string) error
+	SendLoginEmail(ctx context.Context, apiID int, cred *credentials, phone, email string) (string, int, error)
+	VerifyLoginEmail(ctx context.Context, apiID int, cred *credentials, phone, code string) (CodeStatus, error)
 	SignIn(ctx context.Context, apiID int, cred *credentials, phone, code string) (string, error)
 	Password(ctx context.Context, apiID int, cred *credentials, phone, password string) (string, error)
 	LogOut(ctx context.Context, apiID int, cred *credentials, phone string) error
@@ -74,10 +79,10 @@ func (c *Client) Secret() string {
 }
 
 // SendCode asks Telegram to deliver a login code. An existing session is revoked first.
-func (c *Client) SendCode(ctx context.Context) (string, error) {
+func (c *Client) SendCode(ctx context.Context) (CodeStatus, error) {
 	if c.cred.Authorized {
 		if err := c.engine.LogOut(ctx, c.apiID, &c.cred, c.phone); err != nil {
-			return "", err
+			return CodeStatus{}, err
 		}
 		c.cred.Session = nil
 		c.cred.Authorized = false
@@ -86,6 +91,38 @@ func (c *Client) SendCode(ctx context.Context) (string, error) {
 		c.cred.Peer = nil
 	}
 	return c.engine.SendCode(ctx, c.apiID, &c.cred, c.phone)
+}
+
+// ResendCode asks Telegram for the next delivery method on the same auth key.
+func (c *Client) ResendCode(ctx context.Context) (CodeStatus, error) {
+	return c.engine.ResendCode(ctx, c.apiID, &c.cred, c.phone)
+}
+
+// CancelCode drops the pending login code and its connection.
+func (c *Client) CancelCode(ctx context.Context) error {
+	if err := c.engine.CancelCode(ctx, c.apiID, &c.cred, c.phone); err != nil {
+		return err
+	}
+	c.cred.PhoneCodeHash = ""
+	return nil
+}
+
+// SendLoginEmail starts the login-email check Telegram requires before a code.
+func (c *Client) SendLoginEmail(ctx context.Context, email string) (string, int, error) {
+	email = strings.TrimSpace(email)
+	if !strings.Contains(email, "@") || strings.Contains(email, " ") {
+		return "", 0, errors.New("enter an email address")
+	}
+	return c.engine.SendLoginEmail(ctx, c.apiID, &c.cred, c.phone, email)
+}
+
+// VerifyLoginEmail confirms that email and returns where the login code went.
+func (c *Client) VerifyLoginEmail(ctx context.Context, code string) (CodeStatus, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return CodeStatus{}, errors.New("enter the email code")
+	}
+	return c.engine.VerifyLoginEmail(ctx, c.apiID, &c.cred, c.phone, code)
 }
 
 // SignIn completes the code step. ErrPasswordNeeded means the cloud password is next.

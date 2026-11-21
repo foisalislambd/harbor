@@ -209,12 +209,15 @@ export function messageFromFailedResponse(status: number, body: string): string 
   return `Request failed (${status})`;
 }
 
-export function loginCodeMessage(delivery?: string): string {
-  if (delivery === "already") return "This Telegram account is already signed in.";
-  if (delivery === "sms") return "Telegram sent the code by SMS.";
-  if (delivery === "call") return "Telegram is calling with the code.";
-  return "Telegram sent the code inside the Telegram app, in the chat named Telegram. It is not a text message.";
-}
+export type TelegramCode = {
+  type: string;
+  next_type?: string;
+  timeout?: number;
+  length?: number;
+  email_pattern?: string;
+  url?: string;
+  message: string;
+};
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -22,7 +23,16 @@ import (
 	"github.com/gotd/td/tgerr"
 
 	"github.com/gotd/contrib/middleware/floodwait"
+
+	"harbor/internal/config"
 )
+
+func harborAppVersion() string {
+	if config.Version != "" {
+		return config.Version
+	}
+	return "dev"
+}
 
 type gotdEngine struct{}
 
@@ -113,9 +123,11 @@ func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, stor
 			return b
 		},
 		Device: telegram.DeviceConfig{
-			DeviceModel:   "Harbor",
-			SystemVersion: "server",
-			AppVersion:    "harbor",
+			DeviceModel:    "Harbor",
+			SystemVersion:  "Linux",
+			AppVersion:     harborAppVersion(),
+			SystemLangCode: "en",
+			LangCode:       "en",
 		},
 	})
 	err := waiter.Run(attempt, func(ctx context.Context) error {
@@ -130,35 +142,128 @@ func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, stor
 	return err
 }
 
-func (g gotdEngine) SendCode(ctx context.Context, apiID int, cred *credentials, phone string) (string, error) {
-	var delivery string
-	err := g.authCall(ctx, apiID, phone, cred, true, func(ctx context.Context, client *telegram.Client) error {
-		sent, err := sendCode(ctx, client, phone)
+func (g gotdEngine) SendCode(ctx context.Context, apiID int, cred *credentials, phone string) (CodeStatus, error) {
+	status, err := g.exchangeCode(ctx, apiID, phone, cred, true, func(ctx context.Context, client *telegram.Client) (tg.AuthSentCodeClass, error) {
+		return sendCodeOnDC(ctx, client, phone)
+	})
+	if err != nil || status.Type != "firebase_sms" || status.NextType == "" {
+		return status, err
+	}
+	// Official apps are the only clients that can finish Firebase SMS.
+	// A failed resend still returns the firebase result so the panel can
+	// show it and offer the next method.
+	resent, resendErr := g.ResendCode(ctx, apiID, cred, phone)
+	if resendErr != nil {
+		log.Printf("telegram firebase auth.resendCode: %v", resendErr)
+		return status, nil
+	}
+	return resent, nil
+}
+
+func (g gotdEngine) ResendCode(ctx context.Context, apiID int, cred *credentials, phone string) (CodeStatus, error) {
+	if cred.PhoneCodeHash == "" {
+		return CodeStatus{}, errors.New("send a login code first")
+	}
+	return g.exchangeCode(ctx, apiID, phone, cred, false, func(ctx context.Context, client *telegram.Client) (tg.AuthSentCodeClass, error) {
+		sent, err := client.API().AuthResendCode(ctx, &tg.AuthResendCodeRequest{
+			PhoneNumber:   phone,
+			PhoneCodeHash: cred.PhoneCodeHash,
+		})
+		if dc, ok := migrateDC(err); ok {
+			if mErr := client.MigrateTo(ctx, dc); mErr != nil {
+				return nil, err
+			}
+			sent, err = client.API().AuthResendCode(ctx, &tg.AuthResendCodeRequest{
+				PhoneNumber:   phone,
+				PhoneCodeHash: cred.PhoneCodeHash,
+			})
+		}
+		return sent, err
+	})
+}
+
+func (g gotdEngine) CancelCode(ctx context.Context, apiID int, cred *credentials, phone string) error {
+	key := loginKey(apiID, phone, cred.APIHash)
+	if cred.PhoneCodeHash == "" {
+		authSessions.drop(key)
+		return nil
+	}
+	err := g.authCall(ctx, apiID, phone, cred, false, func(ctx context.Context, client *telegram.Client) error {
+		_, err := client.API().AuthCancelCode(ctx, &tg.AuthCancelCodeRequest{
+			PhoneNumber:   phone,
+			PhoneCodeHash: cred.PhoneCodeHash,
+		})
+		if err != nil && !tgerr.Is(err, "PHONE_CODE_EXPIRED", "PHONE_CODE_HASH_EMPTY") {
+			return err
+		}
+		return nil
+	})
+	cred.PhoneCodeHash = ""
+	authSessions.drop(key)
+	if err != nil && strings.Contains(err.Error(), "session for this code is gone") {
+		return nil
+	}
+	return err
+}
+
+func (g gotdEngine) SendLoginEmail(ctx context.Context, apiID int, cred *credentials, phone, email string) (string, int, error) {
+	if cred.PhoneCodeHash == "" {
+		return "", 0, errors.New("send a login code first")
+	}
+	var pattern string
+	var length int
+	err := g.authCall(ctx, apiID, phone, cred, false, func(ctx context.Context, client *telegram.Client) error {
+		sent, err := client.API().AccountSendVerifyEmailCode(ctx, &tg.AccountSendVerifyEmailCodeRequest{
+			Purpose: &tg.EmailVerifyPurposeLoginSetup{PhoneNumber: phone, PhoneCodeHash: cred.PhoneCodeHash},
+			Email:   email,
+		})
 		if err != nil {
 			return err
 		}
-		switch code := sent.(type) {
-		case *tg.AuthSentCode:
-			cred.PhoneCodeHash = code.PhoneCodeHash
-			cred.Authorized = false
-			delivery = deliveryName(code.Type)
-			return nil
-		case *tg.AuthSentCodeSuccess:
-			if authz, ok := code.Authorization.(*tg.AuthAuthorization); ok {
-				cred.User = userLabel(authz.User)
-				cred.Premium = userPremium(authz.User)
-				cred.Authorized = true
-			}
-			delivery = "already"
-			return nil
-		default:
-			return errors.New("this number needs an extra step in the official Telegram app before Harbor can sign in")
-		}
+		pattern = sent.EmailPattern
+		length = sent.Length
+		return nil
 	})
-	return delivery, err
+	return pattern, length, err
 }
 
-func sendCode(ctx context.Context, client *telegram.Client, phone string) (tg.AuthSentCodeClass, error) {
+func (g gotdEngine) VerifyLoginEmail(ctx context.Context, apiID int, cred *credentials, phone, emailCode string) (CodeStatus, error) {
+	if cred.PhoneCodeHash == "" {
+		return CodeStatus{}, errors.New("send a login code first")
+	}
+	return g.exchangeCode(ctx, apiID, phone, cred, false, func(ctx context.Context, client *telegram.Client) (tg.AuthSentCodeClass, error) {
+		verified, err := client.API().AccountVerifyEmail(ctx, &tg.AccountVerifyEmailRequest{
+			Purpose:      &tg.EmailVerifyPurposeLoginSetup{PhoneNumber: phone, PhoneCodeHash: cred.PhoneCodeHash},
+			Verification: &tg.EmailVerificationCode{Code: emailCode},
+		})
+		if err != nil {
+			return nil, err
+		}
+		login, ok := verified.(*tg.AccountEmailVerifiedLogin)
+		if !ok || login.SentCode == nil {
+			return nil, errors.New("telegram confirmed the email but did not send a login code")
+		}
+		return login.SentCode, nil
+	})
+}
+
+func (g gotdEngine) exchangeCode(ctx context.Context, apiID int, phone string, cred *credentials, fresh bool, call func(context.Context, *telegram.Client) (tg.AuthSentCodeClass, error)) (CodeStatus, error) {
+	var status CodeStatus
+	err := g.authCall(ctx, apiID, phone, cred, fresh, func(ctx context.Context, client *telegram.Client) error {
+		sent, err := call(ctx, client)
+		if err != nil {
+			return err
+		}
+		status, err = applySentCode(cred, sent)
+		return err
+	})
+	return status, err
+}
+
+// sendCodeOnDC calls auth.sendCode with empty codeSettings. Flags such as
+// allow_firebase, allow_flashcall, and allow_app_hash ask Telegram for a
+// delivery path this server cannot complete, so they stay unset.
+func sendCodeOnDC(ctx context.Context, client *telegram.Client, phone string) (tg.AuthSentCodeClass, error) {
 	send := func() (tg.AuthSentCodeClass, error) {
 		return client.Auth().SendCode(ctx, phone, auth.SendCodeOptions{})
 	}
@@ -170,19 +275,6 @@ func sendCode(ctx context.Context, client *telegram.Client, phone string) (tg.Au
 		sent, err = send()
 	}
 	return sent, err
-}
-
-func deliveryName(kind tg.AuthSentCodeTypeClass) string {
-	switch kind.(type) {
-	case *tg.AuthSentCodeTypeApp:
-		return "app"
-	case *tg.AuthSentCodeTypeSMS, *tg.AuthSentCodeTypeFragmentSMS, *tg.AuthSentCodeTypeFirebaseSMS:
-		return "sms"
-	case *tg.AuthSentCodeTypeCall, *tg.AuthSentCodeTypeFlashCall, *tg.AuthSentCodeTypeMissedCall:
-		return "call"
-	default:
-		return "telegram"
-	}
 }
 
 func (g gotdEngine) SignIn(ctx context.Context, apiID int, cred *credentials, phone, code string) (string, error) {

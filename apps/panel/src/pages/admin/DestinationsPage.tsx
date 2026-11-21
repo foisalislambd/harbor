@@ -4,9 +4,9 @@ import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { ProviderLogo } from "@/components/provider-logo";
 import { dangerButtonClass, fieldClass, quietButtonClass } from "@/lib/fields";
-import { api, formatBytes, loginCodeMessage, type Destination, type DestinationList, type StorageProvider, type StorageProviderList } from "@/lib/harbor-api";
+import { api, formatBytes, type Destination, type DestinationList, type StorageProvider, type StorageProviderList, type TelegramCode } from "@/lib/harbor-api";
 import { Cloud } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 function formatCap(bytes: number) {
@@ -24,9 +24,11 @@ export default function DestinationsPage() {
   const flash = (location.state as { message?: string } | null)?.message ?? null;
   const [message, setMessage] = useState<string | null>(flash);
   const [loginID, setLoginID] = useState<string | null>(null);
-  const [loginPhase, setLoginPhase] = useState<"code" | "password">("code");
+  const [loginPhase, setLoginPhase] = useState<"code" | "password" | "email" | "email_code">("code");
   const [loginCode, setLoginCode] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [delivery, setDelivery] = useState<TelegramCode | null>(null);
   const [appliedFlash, setAppliedFlash] = useState(flash);
   if (flash !== appliedFlash) {
     setAppliedFlash(flash);
@@ -199,61 +201,44 @@ export default function DestinationsPage() {
                           Log out
                         </button>
                       ) : (
-                        <>
-                          <p className="text-xs text-gray-500">The login code arrives in the Telegram app, in the chat named Telegram. It is not a text message unless Telegram chooses SMS or a call.</p>
-                          {loginID !== destination.id && (
-                            <button
-                              type="button"
-                              className={quietButtonClass}
-                              onClick={() => {
-                                setError(null);
-                                void api<{ delivery?: string }>(`/api/v1/destinations/${destination.id}/telegram/code`, { method: "POST" })
-                                  .then((result) => {
-                                    setMessage(loginCodeMessage(result.delivery));
-                                    if (result.delivery === "already") {
-                                      return load();
-                                    }
-                                    setLoginID(destination.id);
-                                    setLoginPhase("code");
-                                    setLoginCode("");
-                                    setLoginPassword("");
-                                  })
-                                  .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not send a code"));
-                              }}
-                            >
-                              Send login code
-                            </button>
-                          )}
-                          {loginID === destination.id && (
-                            <form
-                              className="flex flex-col gap-2 sm:flex-row"
-                              onSubmit={(event) => {
-                                event.preventDefault();
-                                setError(null);
-                                const body = loginPhase === "password" ? { password: loginPassword } : { code: loginCode, password: loginPassword };
-                                void api<{ status: string }>(`/api/v1/destinations/${destination.id}/telegram/login`, { method: "POST", body: JSON.stringify(body) })
-                                  .then((result) => {
-                                    if (result.status === "password") {
-                                      setLoginPhase("password");
-                                      setMessage("This account has a cloud password.");
-                                      return;
-                                    }
-                                    setLoginID(null);
-                                    setMessage(`${destination.name} is signed in.`);
-                                    return load();
-                                  })
-                                  .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not sign in"));
-                              }}
-                            >
-                              {loginPhase === "code" ? (
-                                <input className={fieldClass} value={loginCode} onChange={(e) => setLoginCode(e.target.value)} placeholder="Login code" required />
-                              ) : (
-                                <input className={fieldClass} type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Cloud password" required />
-                              )}
-                              <button className={quietButtonClass} type="submit">{loginPhase === "password" ? "Confirm password" : "Confirm code"}</button>
-                            </form>
-                          )}
-                        </>
+                        <TelegramLogin
+                          destinationID={destination.id}
+                          name={destination.name}
+                          active={loginID === destination.id}
+                          phase={loginPhase}
+                          code={loginCode}
+                          password={loginPassword}
+                          email={loginEmail}
+                          delivery={delivery}
+                          onCode={setLoginCode}
+                          onPassword={setLoginPassword}
+                          onEmail={setLoginEmail}
+                          onError={setError}
+                          onMessage={setMessage}
+                          onBegin={(status) => {
+                            setLoginID(destination.id);
+                            setDelivery(status);
+                            setLoginCode("");
+                            setLoginPassword("");
+                            setLoginEmail("");
+                            setLoginPhase(status.type === "setup_email" ? "email" : "code");
+                          }}
+                          onDelivery={(status) => {
+                            setDelivery(status);
+                            setLoginPhase(status.type === "setup_email" ? "email" : "code");
+                          }}
+                          onPasswordPhase={() => setLoginPhase("password")}
+                          onEmailCode={() => setLoginPhase("email_code")}
+                          onDone={() => {
+                            setLoginID(null);
+                            setDelivery(null);
+                            return load();
+                          }}
+                          onCancel={() => {
+                            setLoginID(null);
+                            setDelivery(null);
+                          }}
+                        />
                       )}
                     </div>
                   )}
@@ -267,5 +252,171 @@ export default function DestinationsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function TelegramLogin({
+  destinationID,
+  name,
+  active,
+  phase,
+  code,
+  password,
+  email,
+  delivery,
+  onCode,
+  onPassword,
+  onEmail,
+  onError,
+  onMessage,
+  onBegin,
+  onDelivery,
+  onPasswordPhase,
+  onEmailCode,
+  onDone,
+  onCancel,
+}: {
+  destinationID: string;
+  name: string;
+  active: boolean;
+  phase: "code" | "password" | "email" | "email_code";
+  code: string;
+  password: string;
+  email: string;
+  delivery: TelegramCode | null;
+  onCode: (value: string) => void;
+  onPassword: (value: string) => void;
+  onEmail: (value: string) => void;
+  onError: Dispatch<SetStateAction<string | null>>;
+  onMessage: (value: string) => void;
+  onBegin: (status: TelegramCode) => void;
+  onDelivery: (status: TelegramCode) => void;
+  onPasswordPhase: () => void;
+  onEmailCode: () => void;
+  onDone: () => Promise<void> | void;
+  onCancel: () => void;
+}) {
+  const [localError, setLocalError] = useState<string | null>(null);
+  const fail = (err: unknown, fallback: string) => {
+    const text = err instanceof Error ? err.message : fallback;
+    setLocalError(text);
+    onError(text);
+  };
+  const clear = () => {
+    setLocalError(null);
+    onError(null);
+  };
+  const apply = (status: TelegramCode) => {
+    onMessage(status.message);
+    if (status.type === "already") {
+      onCancel();
+      return onDone();
+    }
+    if (!active) onBegin(status);
+    else onDelivery(status);
+  };
+  return (
+    <>
+      <p className="text-xs text-gray-500">Telegram never delivers a login code to this new Harbor session. An in-app code arrives on a phone that is already signed in, in the chat named Telegram (777000).</p>
+      {localError && <p className="text-sm text-error-500">{localError}</p>}
+      {!active && (
+        <button
+          type="button"
+          className={quietButtonClass}
+          onClick={() => {
+            clear();
+            void api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/code`, { method: "POST" })
+              .then(apply)
+              .catch((err: unknown) => fail(err, "Could not send a code"));
+          }}
+        >
+          Send login code
+        </button>
+      )}
+      {active && delivery && (
+        <div className="space-y-2">
+          <p className="text-sm text-gray-700 dark:text-gray-200">{delivery.message}</p>
+          {delivery.url && <a className="text-sm text-brand-600 underline" href={delivery.url} target="_blank" rel="noreferrer">{delivery.url}</a>}
+          {phase === "email" && (
+            <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
+              event.preventDefault();
+              clear();
+              void api<{ email_pattern?: string }>(`/api/v1/destinations/${destinationID}/telegram/email`, { method: "POST", body: JSON.stringify({ email }) })
+                .then((result) => {
+                  onMessage(`Telegram sent a confirmation code to ${result.email_pattern || email}.`);
+                  onEmailCode();
+                })
+                .catch((err: unknown) => fail(err, "Could not send the email code"));
+            }}>
+              <input className={fieldClass} type="email" value={email} onChange={(e) => onEmail(e.target.value)} placeholder="Login email" required />
+              <button className={quietButtonClass} type="submit">Send email code</button>
+            </form>
+          )}
+          {phase === "email_code" && (
+            <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
+              event.preventDefault();
+              clear();
+              void api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/email/verify`, { method: "POST", body: JSON.stringify({ code }) })
+                .then((status) => {
+                  onCode("");
+                  apply(status);
+                })
+                .catch((err: unknown) => fail(err, "Could not confirm the email"));
+            }}>
+              <input className={fieldClass} value={code} onChange={(e) => onCode(e.target.value)} placeholder="Email code" required />
+              <button className={quietButtonClass} type="submit">Confirm email</button>
+            </form>
+          )}
+          {(phase === "code" || phase === "password") && delivery.type !== "setup_email" && delivery.type !== "payment" && (
+            <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
+              event.preventDefault();
+              clear();
+              const body = phase === "password" ? { password } : { code, password };
+              void api<{ status: string }>(`/api/v1/destinations/${destinationID}/telegram/login`, { method: "POST", body: JSON.stringify(body) })
+                .then((result) => {
+                  if (result.status === "password") {
+                    onPasswordPhase();
+                    onMessage("This account has a cloud password.");
+                    return;
+                  }
+                  onMessage(`${name} is signed in.`);
+                  return onDone();
+                })
+                .catch((err: unknown) => fail(err, "Could not sign in"));
+            }}>
+              {phase === "code" ? (
+                <input className={fieldClass} value={code} onChange={(e) => onCode(e.target.value)} placeholder="Login code" required />
+              ) : (
+                <input className={fieldClass} type="password" value={password} onChange={(e) => onPassword(e.target.value)} placeholder="Cloud password" required />
+              )}
+              <button className={quietButtonClass} type="submit">{phase === "password" ? "Confirm password" : "Confirm code"}</button>
+            </form>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {delivery.next_type && phase !== "email" && phase !== "email_code" && (
+              <button type="button" className={quietButtonClass} onClick={() => {
+                clear();
+                void api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/resend`, { method: "POST" })
+                  .then(apply)
+                  .catch((err: unknown) => fail(err, "Could not resend the code"));
+              }}>
+                Resend by {delivery.next_type.replaceAll("_", " ")}
+              </button>
+            )}
+            <button type="button" className={quietButtonClass} onClick={() => {
+              clear();
+              void api(`/api/v1/destinations/${destinationID}/telegram/cancel`, { method: "POST" })
+                .then(() => {
+                  onMessage(`Login cancelled for ${name}.`);
+                  onCancel();
+                })
+                .catch((err: unknown) => fail(err, "Could not cancel the code"));
+            }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

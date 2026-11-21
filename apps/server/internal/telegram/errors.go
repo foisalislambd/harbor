@@ -47,7 +47,7 @@ func explain(err error) error {
 	case "API_ID_INVALID", "API_ID_PUBLISHED_FLOOD":
 		return fmt.Errorf("Telegram rejected the api_id or api_hash (%s). Copy both from my.telegram.org/apps for the same application", rpc.Type)
 	case "PHONE_CODE_INVALID", "PHONE_CODE_EMPTY", "PHONE_CODE_EXPIRED", "PHONE_CODE_HASH_EMPTY":
-		return fmt.Errorf("Telegram rejected the login code (%s). Send a new code and enter the one from the Telegram app", rpc.Type)
+		return fmt.Errorf("Telegram rejected the login code (%s). Send a new code and enter the one from the delivery shown in the panel", rpc.Type)
 	case "PASSWORD_HASH_INVALID":
 		return errors.New("Telegram rejected that cloud password (PASSWORD_HASH_INVALID)")
 	case "FLOOD_WAIT", "PHONE_NUMBER_FLOOD", "FLOOD_PREMIUM_WAIT":

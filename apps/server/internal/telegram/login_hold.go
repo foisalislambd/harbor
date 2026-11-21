@@ -135,6 +135,9 @@ func (s *loginHold) do(ctx context.Context, fn func(context.Context, *telegram.C
 func (g gotdEngine) authCall(ctx context.Context, apiID int, phone string, cred *credentials, fresh bool, fn func(context.Context, *telegram.Client) error) error {
 	key := loginKey(apiID, phone, cred.APIHash)
 	hold := authSessions.get(key)
+	if hold == nil && !fresh && len(cred.Session) == 0 {
+		return errors.New("send a login code again; the Telegram session for this code is gone")
+	}
 	if hold == nil || fresh {
 		hold = authSessions.start(key, cred.Session, func(ctx context.Context, storage *memorySession, serve func(context.Context, *telegram.Client) error) error {
 			return g.runStored(ctx, apiID, cred.APIHash, storage, true, func(ctx context.Context, client *telegram.Client) error {
