@@ -1,15 +1,18 @@
 import { fieldClass, quietButtonClass } from "@/lib/fields";
 import { api, type TelegramCode, type TelegramQR } from "@/lib/harbor-api";
-import { useEffect, useState } from "react";
+import { X } from "lucide-react";
+import { useEffect, useId, useState } from "react";
 
 export function TelegramSignIn({
   destinationID,
   name,
+  onClose,
   onDone,
   onMessage,
 }: {
   destinationID: string;
   name: string;
+  onClose: () => void;
   onDone: () => Promise<void> | void;
   onMessage: (value: string) => void;
 }) {
@@ -22,6 +25,20 @@ export function TelegramSignIn({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const titleID = useId();
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [onClose]);
 
   const fail = (err: unknown, fallback: string) => {
     setError(err instanceof Error ? err.message : fallback);
@@ -99,15 +116,29 @@ export function TelegramSignIn({
   }
 
   return (
-    <div className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-white/5">
-      <div>
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Sign in</h3>
-        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-gray-600 dark:text-gray-300">
-          <li>Open Telegram on your phone</li>
-          <li>Go to Settings, Devices, Link Desktop Device</li>
-          <li>Scan this code</li>
-        </ol>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-gray-950/40 p-4 sm:items-center" onClick={onClose}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleID}
+      className="admin-card max-h-[90dvh] w-full max-w-md overflow-y-auto"
+      onClick={(event) => event.stopPropagation()}
+    >
+    <div className="admin-card-body space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 id={titleID} className="text-lg font-semibold text-gray-900 dark:text-white">Sign in</h3>
+          <p className="mt-1 text-sm text-gray-500">{name}</p>
+        </div>
+        <button type="button" onClick={onClose} aria-label="Close" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/10">
+          <X className="h-4 w-4" />
+        </button>
       </div>
+      <ol className="list-decimal space-y-1 pl-5 text-sm text-gray-600 dark:text-gray-300">
+        <li>Open Telegram on your phone</li>
+        <li>Go to Settings, Devices, Link Desktop Device</li>
+        <li>Scan this code</li>
+      </ol>
       {error && <p className="text-sm text-error-500" role="alert">{error}</p>}
       {phase === "password" ? (
         <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
@@ -126,7 +157,7 @@ export function TelegramSignIn({
         </form>
       ) : qr?.image ? (
         <div className="flex flex-col items-center gap-2">
-          <img src={qr.image} alt="QR code to link this Telegram account" className="h-80 w-80 max-w-full rounded-lg bg-white p-3" />
+          <img src={qr.image} alt="QR code to link this Telegram account" className="h-64 w-64 max-w-full rounded-lg bg-white p-3" />
           <p className="text-sm text-gray-500" aria-live="polite">Refreshes in {left}s</p>
         </div>
       ) : (
@@ -187,6 +218,8 @@ export function TelegramSignIn({
           )}
         </div>
       </details>
+    </div>
+    </div>
     </div>
   );
 }

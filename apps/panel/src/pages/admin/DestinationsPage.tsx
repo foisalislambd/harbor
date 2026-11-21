@@ -40,6 +40,7 @@ export default function DestinationsPage() {
   const [message, setMessage] = useState<string | null>(flash);
   const [checks, setChecks] = useState<Record<string, Check>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [signingIn, setSigningIn] = useState<Destination | null>(null);
   const [appliedFlash, setAppliedFlash] = useState(flash);
   if (flash !== appliedFlash) {
     setAppliedFlash(flash);
@@ -90,7 +91,7 @@ export default function DestinationsPage() {
             const limit = destination.free_storage_bytes || 0;
             const used = destination.account_used_bytes || 0;
             return (
-              <article key={destination.id} className={`admin-card ${needsSignIn ? "lg:col-span-2" : ""}`} aria-labelledby={`dest-${destination.id}`}>
+              <article key={destination.id} className="admin-card" aria-labelledby={`dest-${destination.id}`}>
                 <div className="admin-card-body space-y-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
@@ -129,6 +130,9 @@ export default function DestinationsPage() {
                       }}>
                         {busy === destination.id ? "Testing…" : "Test"}
                       </button>
+                      {needsSignIn && (
+                        <button type="button" className={primaryButtonClass} onClick={() => setSigningIn(destination)}>Sign in</button>
+                      )}
                       <Link to={`/destinations/${destination.id}/edit`} className={quietButtonClass}>Edit</Link>
                       <button type="button" className={dangerButtonClass} onClick={() => {
                         const note = destination.provider === "telegram"
@@ -157,19 +161,23 @@ export default function DestinationsPage() {
                       )}
                     </div>
                   )}
-                  {needsSignIn && isOwner && (
-                    <TelegramSignIn
-                      destinationID={destination.id}
-                      name={destination.name}
-                      onMessage={setMessage}
-                      onDone={load}
-                    />
-                  )}
                 </div>
               </article>
             );
           })}
         </div>
+      )}
+      {signingIn && (
+        <TelegramSignIn
+          destinationID={signingIn.id}
+          name={signingIn.name}
+          onClose={() => setSigningIn(null)}
+          onMessage={setMessage}
+          onDone={async () => {
+            setSigningIn(null);
+            await load();
+          }}
+        />
       )}
     </div>
   );
