@@ -34,6 +34,9 @@ type credentials struct {
 	Authorized    bool        `json:"authorized,omitempty"`
 	Premium       bool        `json:"premium,omitempty"`
 	Peer          *storedPeer `json:"peer,omitempty"`
+	// persist is set when this process changed the session and the handler
+	// should seal it. A joined sendCode that gave up must not overwrite it.
+	persist bool `json:"-"`
 }
 
 type storedPeer struct {
@@ -288,6 +291,9 @@ func redact(err error, cred credentials) error {
 	}
 	if cred.PhoneCodeHash != "" {
 		msg = strings.ReplaceAll(msg, cred.PhoneCodeHash, "code-hash")
+	}
+	if code := StatusCode(err); code != 502 {
+		return statusErr(code, msg)
 	}
 	return errors.New(msg)
 }

@@ -3,11 +3,13 @@ package telegram
 import (
 	"context"
 	"errors"
+	"log"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gotd/td/telegram"
+	"github.com/gotd/td/tgerr"
 )
 
 const (
@@ -122,9 +124,9 @@ func (s *loginHold) do(ctx context.Context, fn func(context.Context, *telegram.C
 		return errLoginClosed
 	case s.calls <- call:
 	}
+	// Wait for the call that was accepted. Canceling here and starting a
+	// second client would orphan the auth key Telegram bound the code to.
 	select {
-	case <-ctx.Done():
-		return ctx.Err()
 	case <-s.closed:
 		return errLoginClosed
 	case err := <-done:
@@ -135,6 +137,9 @@ func (s *loginHold) do(ctx context.Context, fn func(context.Context, *telegram.C
 func (g gotdEngine) authCall(ctx context.Context, apiID int, phone string, cred *credentials, fresh bool, fn func(context.Context, *telegram.Client) error) error {
 	key := loginKey(apiID, phone, cred.APIHash)
 	hold := authSessions.get(key)
+	if hold == nil && !fresh && len(cred.Session) == 0 {
+		return errLoginLost
+	}
 	if hold == nil || fresh {
 		hold = authSessions.start(key, cred.Session, func(ctx context.Context, storage *memorySession, serve func(context.Context, *telegram.Client) error) error {
 			return g.runStored(ctx, apiID, cred.APIHash, storage, true, func(ctx context.Context, client *telegram.Client) error {
@@ -146,11 +151,19 @@ func (g gotdEngine) authCall(ctx context.Context, apiID int, phone string, cred 
 	if snap := hold.storage.snapshot(); len(snap) > 0 {
 		cred.Session = snap
 	}
-	if errorsIsTimeout(err) {
+	if errors.Is(err, errLoginClosed) {
 		authSessions.drop(key)
 	}
 	if errors.Is(err, ErrPasswordNeeded) {
 		return ErrPasswordNeeded
 	}
-	return redact(explain(err), *cred)
+	if err != nil {
+		if rpc, ok := tgerr.As(err); ok {
+			log.Printf("telegram rpc type=%s code=%d", rpc.Type, rpc.Code)
+		}
+		safe := redact(explain(err), *cred)
+		log.Printf("telegram call failed status=%d error=%s", StatusCode(safe), safe.Error())
+		return safe
+	}
+	return nil
 }

@@ -12,6 +12,8 @@ import (
 
 	"harbor/internal/copier"
 	"harbor/internal/store"
+
+	"github.com/gotd/td/tg"
 )
 
 func TestPrepareAndLimits(t *testing.T) {
@@ -59,9 +61,17 @@ func TestLoginUploadAndDelete(t *testing.T) {
 	fake := &fakeEngine{passwordNeeded: true, files: map[int][]byte{}}
 	client.engine = fake
 	client.limit = 8
+	client.cred.Session = []byte("stale-auth-key")
+	client.cred.PhoneCodeHash = "stale-hash"
 	delivery, err := client.SendCode(context.Background())
-	if err != nil || delivery != "app" || client.cred.PhoneCodeHash == "" {
-		t.Fatalf("send code %q %v hash %q", delivery, err, client.cred.PhoneCodeHash)
+	if err != nil || delivery.Type != "app" || delivery.TypeName != "auth.sentCodeTypeApp" || delivery.NextType != "sms" || client.cred.PhoneCodeHash == "" {
+		t.Fatalf("send code %+v %v hash %q", delivery, err, client.cred.PhoneCodeHash)
+	}
+	if fake.seenSession != "" || client.cred.PhoneCodeHash == "stale-hash" {
+		t.Fatalf("stale session %q hash %q", fake.seenSession, client.cred.PhoneCodeHash)
+	}
+	if !strings.Contains(delivery.Message, "auth.sentCodeTypeApp") || !strings.Contains(delivery.Message, "777000") {
+		t.Fatal(delivery.Message)
 	}
 	if _, err := client.SignIn(context.Background(), "12345"); !errors.Is(err, ErrPasswordNeeded) {
 		t.Fatal(err)
@@ -120,12 +130,38 @@ type fakeEngine struct {
 	captions       []string
 	deleted        []string
 	next           int
+	seenSession    string
 }
 
-func (f *fakeEngine) SendCode(_ context.Context, _ int, cred *credentials, _ string) (string, error) {
+func (f *fakeEngine) SendCode(_ context.Context, _ int, cred *credentials, _ string) (CodeStatus, error) {
+	f.seenSession = string(cred.Session)
 	cred.PhoneCodeHash = "code-hash"
 	cred.Session = []byte("key")
-	return "app", nil
+	sent := &tg.AuthSentCode{Type: &tg.AuthSentCodeTypeApp{Length: 5}}
+	sent.SetNextType(&tg.AuthCodeTypeSMS{})
+	sent.SetTimeout(30)
+	return describeSentCode(sent), nil
+}
+
+func (f *fakeEngine) ResendCode(_ context.Context, _ int, cred *credentials, _ string) (CodeStatus, error) {
+	if cred.PhoneCodeHash == "" || string(cred.Session) == "" {
+		return CodeStatus{}, errors.New("missing session")
+	}
+	cred.PhoneCodeHash = "resent-hash"
+	return CodeStatus{Type: "sms", Message: "Telegram sent the code by SMS."}, nil
+}
+
+func (f *fakeEngine) CancelCode(_ context.Context, _ int, cred *credentials, _ string) error {
+	cred.PhoneCodeHash = ""
+	return nil
+}
+
+func (f *fakeEngine) SendLoginEmail(context.Context, int, *credentials, string, string) (string, int, error) {
+	return "a*@example.com", 6, nil
+}
+
+func (f *fakeEngine) VerifyLoginEmail(context.Context, int, *credentials, string, string) (CodeStatus, error) {
+	return CodeStatus{Type: "email", EmailPattern: "a*@example.com", Message: "email"}, nil
 }
 
 func (f *fakeEngine) SignIn(_ context.Context, _ int, cred *credentials, _, _ string) (string, error) {

@@ -124,6 +124,10 @@ func (a *API) testDestination(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 	}
 	if _, err := checkDestination(ctx, dest); err != nil {
+		if dest.Provider == store.ProviderTelegram {
+			writeTelegramError(w, err)
+			return
+		}
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}

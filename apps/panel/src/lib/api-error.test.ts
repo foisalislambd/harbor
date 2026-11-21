@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loginCodeMessage, messageFromFailedResponse } from "./harbor-api.ts";
+import { messageFromFailedResponse } from "./harbor-api.ts";
 
 const cloudflare = `<!DOCTYPE html> <!--[if lt IE 7]> <html class="no-js ie6 oldie" lang="en-US">`;
 
@@ -19,10 +19,3 @@ test("a JSON error is shown as Harbor wrote it", () => {
   );
 });
 
-test("the login code is described as an in-app message", () => {
-  assert.match(loginCodeMessage("app"), /Telegram app/);
-  assert.match(loginCodeMessage(), /not a text message/);
-  assert.match(loginCodeMessage("sms"), /SMS/);
-  assert.match(loginCodeMessage("call"), /calling/);
-  assert.match(loginCodeMessage("already"), /already signed in/);
-});
