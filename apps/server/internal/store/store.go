@@ -61,7 +61,10 @@ type Project struct {
 	UpdatedAt       string `json:"updated_at"`
 }
 
-const ProviderCloudflareR2 = "cloudflare_r2"
+const (
+	ProviderCloudflareR2 = "cloudflare_r2"
+	ProviderTelegram     = "telegram"
+)
 
 type Destination struct {
 	ID            string `json:"id"`
@@ -1312,6 +1315,23 @@ func (s *Store) CreateDestination(ctx context.Context, d Destination) (Destinati
 	}
 	d.Secret = ""
 	return s.GetDestination(ctx, d.ID)
+}
+
+// UpdateDestinationSecret replaces the sealed credential for one destination.
+func (s *Store) UpdateDestinationSecret(ctx context.Context, destinationID, secret string) error {
+	sealed, err := s.box.Seal(secret)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE destinations SET secret_access_key = ?, updated_at = ? WHERE id = ?`, sealed, Now(), destinationID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) ListDestinations(ctx context.Context) ([]Destination, error) {

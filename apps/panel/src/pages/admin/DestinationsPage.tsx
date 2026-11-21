@@ -3,7 +3,7 @@ import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { ProviderLogo } from "@/components/provider-logo";
-import { dangerButtonClass, quietButtonClass } from "@/lib/fields";
+import { dangerButtonClass, fieldClass, quietButtonClass } from "@/lib/fields";
 import { api, formatBytes, type Destination, type DestinationList, type StorageProvider, type StorageProviderList } from "@/lib/harbor-api";
 import { Cloud } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -23,6 +23,10 @@ export default function DestinationsPage() {
   const [error, setError] = useState<string | null>(null);
   const flash = (location.state as { message?: string } | null)?.message ?? null;
   const [message, setMessage] = useState<string | null>(flash);
+  const [loginID, setLoginID] = useState<string | null>(null);
+  const [loginPhase, setLoginPhase] = useState<"code" | "password">("code");
+  const [loginCode, setLoginCode] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
   const [appliedFlash, setAppliedFlash] = useState(flash);
   if (flash !== appliedFlash) {
     setAppliedFlash(flash);
@@ -114,7 +118,9 @@ export default function DestinationsPage() {
             const limit = destination.free_storage_bytes || 0;
             const accountUsed = destination.account_used_bytes || 0;
             const width = limit > 0 ? Math.min(100, (Math.min(limit, accountUsed) / limit) * 100) : 0;
-            const where = [destination.bucket, destination.region, destination.endpoint, destination.jurisdiction && `${destination.jurisdiction} jurisdiction`].filter(Boolean).join(" · ");
+            const where = destination.provider === "telegram"
+              ? [destination.account_id, destination.endpoint || "Saved Messages", destination.region && `topic ${destination.region}`, destination.signed_in ? (destination.account_label || "signed in") : "not signed in"].filter(Boolean).join(" · ")
+              : [destination.bucket, destination.region, destination.endpoint, destination.jurisdiction && `${destination.jurisdiction} jurisdiction`].filter(Boolean).join(" · ");
             return (
               <article key={destination.id} className="admin-card">
                 <div className="admin-card-body space-y-3">
@@ -137,7 +143,7 @@ export default function DestinationsPage() {
                           setError(null);
                           setMessage(null);
                           void api(`/api/v1/destinations/${destination.id}/test`, { method: "POST" })
-                            .then(() => setMessage(`${destination.name} can see the bucket.`))
+                            .then(() => setMessage(destination.provider === "telegram" ? `${destination.name} is signed in.` : `${destination.name} can see the bucket.`))
                             .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not reach this storage"));
                         }}
                       >
@@ -147,7 +153,10 @@ export default function DestinationsPage() {
                         type="button"
                         className={dangerButtonClass}
                         onClick={() => {
-                          if (!confirm(`Remove ${destination.name}? Backups stay on this machine. Files already in the bucket stay there.`)) return;
+                          const note = destination.provider === "telegram"
+                            ? `Remove ${destination.name}? Backups stay on this machine. Messages already in the chat stay there.`
+                            : `Remove ${destination.name}? Backups stay on this machine. Files already in the bucket stay there.`;
+                          if (!confirm(note)) return;
                           setError(null);
                           void api(`/api/v1/destinations/${destination.id}`, { method: "DELETE" })
                             .then(load)
@@ -170,7 +179,83 @@ export default function DestinationsPage() {
                   {destination.allow_over_free && (
                     <p className="text-sm text-gray-500">Harbor will keep copying after the free allowance. {formatBytes(accountUsed)} is stored so far.</p>
                   )}
-                  <p className="text-xs text-gray-500">Access key {destination.access_key_id} · prefix {destination.key_prefix}</p>
+                  {destination.provider === "telegram" && isOwner && (
+                    <div className="space-y-2">
+                      {destination.signed_in ? (
+                        <button
+                          type="button"
+                          className={quietButtonClass}
+                          onClick={() => {
+                            if (!confirm(`Log out of Telegram for ${destination.name}? This revokes the session.`)) return;
+                            setError(null);
+                            void api(`/api/v1/destinations/${destination.id}/telegram/logout`, { method: "POST" })
+                              .then(() => {
+                                setMessage(`${destination.name} logged out of Telegram.`);
+                                return load();
+                              })
+                              .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not log out"));
+                          }}
+                        >
+                          Log out
+                        </button>
+                      ) : (
+                        <>
+                          {loginID !== destination.id && (
+                            <button
+                              type="button"
+                              className={quietButtonClass}
+                              onClick={() => {
+                                setError(null);
+                                void api<{ delivery?: string }>(`/api/v1/destinations/${destination.id}/telegram/code`, { method: "POST" })
+                                  .then((result) => {
+                                    setLoginID(destination.id);
+                                    setLoginPhase("code");
+                                    setLoginCode("");
+                                    setLoginPassword("");
+                                    setMessage(`Telegram sent a code${result.delivery ? ` by ${result.delivery}` : ""}.`);
+                                  })
+                                  .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not send a code"));
+                              }}
+                            >
+                              Send login code
+                            </button>
+                          )}
+                          {loginID === destination.id && (
+                            <form
+                              className="flex flex-col gap-2 sm:flex-row"
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                setError(null);
+                                const body = loginPhase === "password" ? { password: loginPassword } : { code: loginCode, password: loginPassword };
+                                void api<{ status: string }>(`/api/v1/destinations/${destination.id}/telegram/login`, { method: "POST", body: JSON.stringify(body) })
+                                  .then((result) => {
+                                    if (result.status === "password") {
+                                      setLoginPhase("password");
+                                      setMessage("This account has a cloud password.");
+                                      return;
+                                    }
+                                    setLoginID(null);
+                                    setMessage(`${destination.name} is signed in.`);
+                                    return load();
+                                  })
+                                  .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not sign in"));
+                              }}
+                            >
+                              {loginPhase === "code" ? (
+                                <input className={fieldClass} value={loginCode} onChange={(e) => setLoginCode(e.target.value)} placeholder="Login code" required />
+                              ) : (
+                                <input className={fieldClass} type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Cloud password" required />
+                              )}
+                              <button className={quietButtonClass} type="submit">{loginPhase === "password" ? "Confirm password" : "Confirm code"}</button>
+                            </form>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {destination.provider !== "telegram" && (
+                    <p className="text-xs text-gray-500">Access key {destination.access_key_id} · prefix {destination.key_prefix}</p>
+                  )}
                 </div>
               </article>
             );

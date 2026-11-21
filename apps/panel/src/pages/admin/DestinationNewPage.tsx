@@ -63,7 +63,7 @@ export default function DestinationNewPage() {
         method: "POST",
         body: JSON.stringify({ ...form, provider: provider.id }),
       });
-      navigate("/destinations", { state: { message: `${provider.name} is connected. Choose it on a project to copy backups there.` } });
+      navigate("/destinations", { state: { message: provider.telegram ? `${provider.name} is saved. Send a login code on this page, then choose it on a project.` : `${provider.name} is connected. Choose it on a project to copy backups there.` } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add this destination");
       setSaving(false);
@@ -98,10 +98,37 @@ export default function DestinationNewPage() {
                 <span className={labelClass}>Name</span>
                 <input className={fieldClass} required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={provider.name} />
               </label>
+              {provider.telegram ? (
+                <>
+                  <label className="block">
+                    <span className={labelClass}>API ID</span>
+                    <input className={fieldClass} required inputMode="numeric" value={form.access_key_id} onChange={(e) => setForm({ ...form, access_key_id: e.target.value })} placeholder="123456" />
+                  </label>
+                  <label className="block md:col-span-2">
+                    <span className={labelClass}>API hash</span>
+                    <input className={fieldClass} required type="password" autoComplete="new-password" value={form.secret_access_key} onChange={(e) => setForm({ ...form, secret_access_key: e.target.value })} placeholder="From my.telegram.org/apps" />
+                  </label>
+                  <label className="block">
+                    <span className={labelClass}>Phone number</span>
+                    <input className={fieldClass} required value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })} placeholder="+15551234567" />
+                  </label>
+                  <label className="block">
+                    <span className={labelClass}>Target</span>
+                    <input className={fieldClass} value={form.endpoint} onChange={(e) => setForm({ ...form, endpoint: e.target.value })} placeholder="Saved Messages, @channel, invite link, or numeric id" />
+                  </label>
+                  <label className="block">
+                    <span className={labelClass}>Topic ID</span>
+                    <input className={fieldClass} value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} placeholder="Optional forum topic" />
+                  </label>
+                </>
+              ) : (
               <label className="block">
                 <span className={labelClass}>Bucket</span>
                 <input className={fieldClass} required value={form.bucket} onChange={(e) => setForm({ ...form, bucket: e.target.value })} placeholder="harbor-backups" />
               </label>
+              )}
+              {!provider.telegram && (
+              <>
               {provider.account_id && (
                 <label className="block md:col-span-2">
                   <span className={labelClass}>Account ID</span>
@@ -148,8 +175,10 @@ export default function DestinationNewPage() {
                   Keep copying after the free {formatCap(provider.free_bytes)}
                 </label>
               )}
+              </>
+              )}
               <div className="md:col-span-2">
-                <button className={primaryButtonClass} disabled={saving} type="submit">{saving ? "Checking bucket…" : "Add destination"}</button>
+                <button className={primaryButtonClass} disabled={saving} type="submit">{saving ? (provider.telegram ? "Saving…" : "Checking bucket…") : "Add destination"}</button>
               </div>
             </form>
           </div>

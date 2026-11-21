@@ -11,11 +11,12 @@ import (
 	"log"
 	"sync"
 
+	"harbor/internal/copier"
 	"harbor/internal/providers"
 	"harbor/internal/store"
 )
 
-var openClient = providers.Open
+var openClient = providers.Connect
 
 var storageLimit = func(d store.Destination) int64 {
 	if d.AllowOverFree {
@@ -77,20 +78,24 @@ func SyncBackup(ctx context.Context, st *store.Store, backup store.Backup) (stri
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return "", err
 	}
-	if err == nil && existing.Status == storeStatusSynced && existing.ObjectKey == key {
+	if err == nil && existing.Status == storeStatusSynced && (existing.ObjectKey == key || dest.Provider == store.ProviderTelegram) {
 		return "already", nil
 	}
-	present, err := st.ObjectSynced(ctx, dest.ID, key)
-	if err != nil {
-		return "", err
-	}
+	present := false
 	shared := false
-	if !present {
-		shared, err = st.RemoteObjectStored(ctx, dest, key)
+	if dest.Provider != store.ProviderTelegram {
+		present, err = st.ObjectSynced(ctx, dest.ID, key)
 		if err != nil {
 			return "", err
 		}
+		if !present {
+			shared, err = st.RemoteObjectStored(ctx, dest, key)
+			if err != nil {
+				return "", err
+			}
+		}
 	}
+	storedKey := key
 	if !present && !shared {
 		limit := storageLimit(dest)
 		if limit > 0 {
@@ -123,7 +128,12 @@ func SyncBackup(ctx context.Context, st *store.Store, backup store.Backup) (stri
 			}
 			return "failed", nil
 		}
-		if err := client.PutFile(ctx, key, path, backup.ContentType, backup.Checksum, backup.SizeBytes); err != nil {
+		storedKey, err = client.Put(ctx, copier.Upload{
+			Key: key, Path: path, ContentType: backup.ContentType, Checksum: backup.Checksum, Size: backup.SizeBytes,
+			Project: project.Name, Name: backup.Name, Kind: backup.Kind, CreatedAt: backup.CreatedAt,
+		})
+		keepSession(ctx, st, dest.ID, client)
+		if err != nil {
 			if saveErr := saveFailure(ctx, st, backup, dest.ID, key, err); saveErr != nil {
 				return "", saveErr
 			}
@@ -131,7 +141,7 @@ func SyncBackup(ctx context.Context, st *store.Store, backup store.Backup) (stri
 		}
 	}
 	if err := st.UpsertReplica(ctx, backup.ID, store.Replica{
-		DestinationID: dest.ID, ObjectKey: key, Status: storeStatusSynced, SizeBytes: backup.SizeBytes,
+		DestinationID: dest.ID, ObjectKey: storedKey, Status: storeStatusSynced, SizeBytes: backup.SizeBytes,
 	}); err != nil {
 		return "", err
 	}
@@ -140,11 +150,24 @@ func SyncBackup(ctx context.Context, st *store.Store, backup store.Backup) (stri
 
 const storeStatusSynced = "synced"
 
+func keepSession(ctx context.Context, st *store.Store, destinationID string, client copier.Store) {
+	keeper, ok := client.(interface{ Secret() string })
+	if !ok {
+		return
+	}
+	secret := keeper.Secret()
+	if secret == "" {
+		return
+	}
+	_ = st.UpdateDestinationSecret(ctx, destinationID, secret)
+}
+
 func saveFailure(ctx context.Context, st *store.Store, backup store.Backup, destinationID, key string, cause error) error {
 	msg := cause.Error()
 	if len(msg) > 300 {
 		msg = msg[:300]
 	}
+	st.AddAudit(ctx, "harbor", "backup.copy_failed", backup.ID, msg)
 	return st.UpsertReplica(ctx, backup.ID, store.Replica{
 		DestinationID: destinationID, ObjectKey: key, Status: "failed", Error: msg, SizeBytes: backup.SizeBytes,
 	})
@@ -208,9 +231,11 @@ func FlushDeletes(ctx context.Context, st *store.Store) {
 			continue
 		}
 		if err := client.Delete(ctx, item.ObjectKey); err != nil {
+			keepSession(ctx, st, dest.ID, client)
 			log.Printf("remote delete %s: %v", item.ObjectKey, err)
 			continue
 		}
+		keepSession(ctx, st, dest.ID, client)
 		if err := st.FinishRemoteDelete(ctx, item.DestinationID, item.ObjectKey); err != nil {
 			log.Printf("remote delete: %v", err)
 		}
@@ -247,6 +272,7 @@ func OpenRemote(ctx context.Context, st *store.Store, backup store.Backup) (io.R
 			continue
 		}
 		body, err := client.Open(ctx, replica.ObjectKey)
+		keepSession(ctx, st, dest.ID, client)
 		if err != nil {
 			last = err
 			continue
