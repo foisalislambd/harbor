@@ -17,8 +17,8 @@ var ErrPasswordNeeded = errors.New("telegram cloud password required")
 type engine interface {
 	SendCode(ctx context.Context, apiID int, cred *credentials, phone string) (string, error)
 	SignIn(ctx context.Context, apiID int, cred *credentials, phone, code string) (string, error)
-	Password(ctx context.Context, apiID int, cred *credentials, password string) (string, error)
-	LogOut(ctx context.Context, apiID int, cred *credentials) error
+	Password(ctx context.Context, apiID int, cred *credentials, phone, password string) (string, error)
+	LogOut(ctx context.Context, apiID int, cred *credentials, phone string) error
 	Self(ctx context.Context, apiID int, cred *credentials) (string, bool, error)
 	Resolve(ctx context.Context, apiID int, cred *credentials, target string) (storedPeer, error)
 	Upload(ctx context.Context, apiID int, cred *credentials, peer storedPeer, topic int, file *os.File, offset, n int64, filename, caption string) (int, error)
@@ -76,7 +76,7 @@ func (c *Client) Secret() string {
 // SendCode asks Telegram to deliver a login code. An existing session is revoked first.
 func (c *Client) SendCode(ctx context.Context) (string, error) {
 	if c.cred.Authorized {
-		if err := c.engine.LogOut(ctx, c.apiID, &c.cred); err != nil {
+		if err := c.engine.LogOut(ctx, c.apiID, &c.cred, c.phone); err != nil {
 			return "", err
 		}
 		c.cred.Session = nil
@@ -105,7 +105,7 @@ func (c *Client) SignIn(ctx context.Context, code string) (string, error) {
 
 // Password finishes a 2FA sign-in.
 func (c *Client) Password(ctx context.Context, password string) (string, error) {
-	name, err := c.engine.Password(ctx, c.apiID, &c.cred, password)
+	name, err := c.engine.Password(ctx, c.apiID, &c.cred, c.phone, password)
 	if err != nil {
 		return "", err
 	}
@@ -117,7 +117,7 @@ func (c *Client) Password(ctx context.Context, password string) (string, error) 
 
 // LogOut revokes the MTProto session.
 func (c *Client) LogOut(ctx context.Context) error {
-	if err := c.engine.LogOut(ctx, c.apiID, &c.cred); err != nil {
+	if err := c.engine.LogOut(ctx, c.apiID, &c.cred, c.phone); err != nil {
 		return err
 	}
 	c.cred.Session = nil

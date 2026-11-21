@@ -9,8 +9,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/gotd/td/session"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
@@ -25,10 +27,13 @@ import (
 type gotdEngine struct{}
 
 type memorySession struct {
+	mu   sync.Mutex
 	data []byte
 }
 
 func (m *memorySession) LoadSession(context.Context) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if len(m.data) == 0 {
 		return nil, session.ErrNotFound
 	}
@@ -36,37 +41,99 @@ func (m *memorySession) LoadSession(context.Context) ([]byte, error) {
 }
 
 func (m *memorySession) StoreSession(_ context.Context, data []byte) error {
+	m.mu.Lock()
 	m.data = append([]byte(nil), data...)
+	m.mu.Unlock()
 	return nil
 }
 
-func (gotdEngine) run(ctx context.Context, apiID int, cred *credentials, fn func(context.Context, *telegram.Client) error) error {
-	storage := &memorySession{data: cred.Session}
-	waiter := floodwait.NewWaiter().WithMaxWait(2 * time.Minute).WithMaxRetries(5)
-	client := telegram.NewClient(apiID, cred.APIHash, telegram.Options{
-		SessionStorage: storage,
-		Middlewares:    []telegram.Middleware{waiter},
-		MaxRetries:     5,
-		DialTimeout:    20 * time.Second,
-	})
-	err := waiter.Run(ctx, func(ctx context.Context) error {
-		return client.Run(ctx, func(ctx context.Context) error {
-			return fn(ctx, client)
-		})
-	})
-	if len(storage.data) > 0 {
-		cred.Session = append([]byte(nil), storage.data...)
+func (m *memorySession) snapshot() []byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]byte(nil), m.data...)
+}
+
+func (g gotdEngine) run(ctx context.Context, apiID int, cred *credentials, fn func(context.Context, *telegram.Client) error) error {
+	storage := &memorySession{data: append([]byte(nil), cred.Session...)}
+	err := g.runStored(ctx, apiID, cred.APIHash, storage, false, fn)
+	if snap := storage.snapshot(); len(snap) > 0 {
+		cred.Session = snap
 	}
 	if errors.Is(err, ErrPasswordNeeded) {
 		return ErrPasswordNeeded
 	}
-	return redact(err, *cred)
+	if ctx.Err() != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+		return redact(ctx.Err(), *cred)
+	}
+	return redact(explain(err), *cred)
+}
+
+// runStored connects and then calls fn. Reaching Telegram is limited to authBudget
+// so a blocked datacenter cannot hold an HTTP request until a proxy times out.
+// After fn starts, ctx controls the rest of the call.
+func (gotdEngine) runStored(ctx context.Context, apiID int, apiHash string, storage *memorySession, authCall bool, fn func(context.Context, *telegram.Client) error) error {
+	attempt, stop := context.WithCancel(ctx)
+	defer stop()
+	started := make(chan struct{})
+	go func() {
+		timer := time.NewTimer(authBudget)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			select {
+			case <-started:
+			default:
+				stop()
+			}
+		case <-attempt.Done():
+		case <-started:
+		}
+	}()
+	maxWait := 2 * time.Minute
+	retries := 5
+	if authCall {
+		// A long FLOOD_WAIT must be shown to the user, not slept through.
+		maxWait = 5 * time.Second
+		retries = 1
+	}
+	waiter := floodwait.NewWaiter().WithMaxWait(maxWait).WithMaxRetries(retries)
+	client := telegram.NewClient(apiID, apiHash, telegram.Options{
+		SessionStorage:   storage,
+		Middlewares:      []telegram.Middleware{waiter},
+		MaxRetries:       3,
+		DialTimeout:      10 * time.Second,
+		ExchangeTimeout:  10 * time.Second,
+		MigrationTimeout: 15 * time.Second,
+		NoUpdates:        true,
+		ReconnectionBackoff: func() backoff.BackOff {
+			b := backoff.NewExponentialBackOff()
+			b.InitialInterval = 200 * time.Millisecond
+			b.MaxInterval = 2 * time.Second
+			b.MaxElapsedTime = authBudget
+			return b
+		},
+		Device: telegram.DeviceConfig{
+			DeviceModel:   "Harbor",
+			SystemVersion: "server",
+			AppVersion:    "harbor",
+		},
+	})
+	err := waiter.Run(attempt, func(ctx context.Context) error {
+		return client.Run(ctx, func(ctx context.Context) error {
+			close(started)
+			return fn(ctx, client)
+		})
+	})
+	if ctx.Err() == nil && errors.Is(err, context.Canceled) {
+		return errTelegramUnreachable
+	}
+	return err
 }
 
 func (g gotdEngine) SendCode(ctx context.Context, apiID int, cred *credentials, phone string) (string, error) {
 	var delivery string
-	err := g.run(ctx, apiID, cred, func(ctx context.Context, client *telegram.Client) error {
-		sent, err := client.Auth().SendCode(ctx, phone, auth.SendCodeOptions{})
+	err := g.authCall(ctx, apiID, phone, cred, true, func(ctx context.Context, client *telegram.Client) error {
+		sent, err := sendCode(ctx, client, phone)
 		if err != nil {
 			return err
 		}
@@ -76,11 +143,33 @@ func (g gotdEngine) SendCode(ctx context.Context, apiID int, cred *credentials, 
 			cred.Authorized = false
 			delivery = deliveryName(code.Type)
 			return nil
+		case *tg.AuthSentCodeSuccess:
+			if authz, ok := code.Authorization.(*tg.AuthAuthorization); ok {
+				cred.User = userLabel(authz.User)
+				cred.Premium = userPremium(authz.User)
+				cred.Authorized = true
+			}
+			delivery = "already"
+			return nil
 		default:
 			return errors.New("this number needs an extra step in the official Telegram app before Harbor can sign in")
 		}
 	})
 	return delivery, err
+}
+
+func sendCode(ctx context.Context, client *telegram.Client, phone string) (tg.AuthSentCodeClass, error) {
+	send := func() (tg.AuthSentCodeClass, error) {
+		return client.Auth().SendCode(ctx, phone, auth.SendCodeOptions{})
+	}
+	sent, err := send()
+	if dc, ok := migrateDC(err); ok {
+		if mErr := client.MigrateTo(ctx, dc); mErr != nil {
+			return nil, err
+		}
+		sent, err = send()
+	}
+	return sent, err
 }
 
 func deliveryName(kind tg.AuthSentCodeTypeClass) string {
@@ -98,8 +187,17 @@ func deliveryName(kind tg.AuthSentCodeTypeClass) string {
 
 func (g gotdEngine) SignIn(ctx context.Context, apiID int, cred *credentials, phone, code string) (string, error) {
 	var name string
-	err := g.run(ctx, apiID, cred, func(ctx context.Context, client *telegram.Client) error {
-		authz, err := client.Auth().SignIn(ctx, phone, code, cred.PhoneCodeHash)
+	err := g.authCall(ctx, apiID, phone, cred, false, func(ctx context.Context, client *telegram.Client) error {
+		sign := func() (*tg.AuthAuthorization, error) {
+			return client.Auth().SignIn(ctx, phone, code, cred.PhoneCodeHash)
+		}
+		authz, err := sign()
+		if dc, ok := migrateDC(err); ok {
+			if mErr := client.MigrateTo(ctx, dc); mErr != nil {
+				return err
+			}
+			authz, err = sign()
+		}
 		if errors.Is(err, auth.ErrPasswordAuthNeeded) {
 			return ErrPasswordNeeded
 		}
@@ -110,15 +208,18 @@ func (g gotdEngine) SignIn(ctx context.Context, apiID int, cred *credentials, ph
 		cred.Premium = userPremium(authz.User)
 		return nil
 	})
+	if err == nil {
+		authSessions.drop(loginKey(apiID, phone, cred.APIHash))
+	}
 	if errors.Is(err, ErrPasswordNeeded) {
 		return "", ErrPasswordNeeded
 	}
 	return name, err
 }
 
-func (g gotdEngine) Password(ctx context.Context, apiID int, cred *credentials, password string) (string, error) {
+func (g gotdEngine) Password(ctx context.Context, apiID int, cred *credentials, phone, password string) (string, error) {
 	var name string
-	err := g.run(ctx, apiID, cred, func(ctx context.Context, client *telegram.Client) error {
+	err := g.authCall(ctx, apiID, phone, cred, false, func(ctx context.Context, client *telegram.Client) error {
 		authz, err := client.Auth().Password(ctx, password)
 		if err != nil {
 			return err
@@ -127,10 +228,25 @@ func (g gotdEngine) Password(ctx context.Context, apiID int, cred *credentials, 
 		cred.Premium = userPremium(authz.User)
 		return nil
 	})
+	if err == nil {
+		authSessions.drop(loginKey(apiID, phone, cred.APIHash))
+	}
 	return name, err
 }
 
-func (g gotdEngine) LogOut(ctx context.Context, apiID int, cred *credentials) error {
+func (g gotdEngine) LogOut(ctx context.Context, apiID int, cred *credentials, phone string) error {
+	key := loginKey(apiID, phone, cred.APIHash)
+	if authSessions.get(key) != nil {
+		err := g.authCall(ctx, apiID, phone, cred, false, func(ctx context.Context, client *telegram.Client) error {
+			if _, err := client.API().AuthLogOut(ctx); err != nil && !auth.IsUnauthorized(err) {
+				return err
+			}
+			return nil
+		})
+		authSessions.drop(key)
+		cred.Session = nil
+		return err
+	}
 	if len(cred.Session) == 0 {
 		return nil
 	}

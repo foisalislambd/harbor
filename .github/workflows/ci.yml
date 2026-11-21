@@ -41,7 +41,7 @@ jobs:
           cache-dependency-path: apps/panel/package-lock.json
       - name: Install and typecheck
         working-directory: apps/panel
-        run: npm ci && npx tsc -b --pretty false && npm run lint && npm audit --omit=dev
+        run: npm ci && npx tsc -b --pretty false && npm run lint && node --experimental-strip-types --test src/lib/api-error.test.ts && npm audit --omit=dev
 
   release:
     name: Release and Docker image

@@ -4,7 +4,7 @@ import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { ProviderLogo } from "@/components/provider-logo";
 import { dangerButtonClass, fieldClass, quietButtonClass } from "@/lib/fields";
-import { api, formatBytes, type Destination, type DestinationList, type StorageProvider, type StorageProviderList } from "@/lib/harbor-api";
+import { api, formatBytes, loginCodeMessage, type Destination, type DestinationList, type StorageProvider, type StorageProviderList } from "@/lib/harbor-api";
 import { Cloud } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -200,6 +200,7 @@ export default function DestinationsPage() {
                         </button>
                       ) : (
                         <>
+                          <p className="text-xs text-gray-500">The login code arrives in the Telegram app, in the chat named Telegram. It is not a text message unless Telegram chooses SMS or a call.</p>
                           {loginID !== destination.id && (
                             <button
                               type="button"
@@ -208,11 +209,14 @@ export default function DestinationsPage() {
                                 setError(null);
                                 void api<{ delivery?: string }>(`/api/v1/destinations/${destination.id}/telegram/code`, { method: "POST" })
                                   .then((result) => {
+                                    setMessage(loginCodeMessage(result.delivery));
+                                    if (result.delivery === "already") {
+                                      return load();
+                                    }
                                     setLoginID(destination.id);
                                     setLoginPhase("code");
                                     setLoginCode("");
                                     setLoginPassword("");
-                                    setMessage(`Telegram sent a code${result.delivery ? ` by ${result.delivery}` : ""}.`);
                                   })
                                   .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not send a code"));
                               }}

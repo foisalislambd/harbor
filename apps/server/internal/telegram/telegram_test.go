@@ -136,12 +136,12 @@ func (f *fakeEngine) SignIn(_ context.Context, _ int, cred *credentials, _, _ st
 	return "Ada (@ada)", nil
 }
 
-func (f *fakeEngine) Password(_ context.Context, _ int, cred *credentials, _ string) (string, error) {
+func (f *fakeEngine) Password(_ context.Context, _ int, cred *credentials, _, _ string) (string, error) {
 	cred.Session = []byte("ready")
 	return "Ada (@ada)", nil
 }
 
-func (f *fakeEngine) LogOut(context.Context, int, *credentials) error { return nil }
+func (f *fakeEngine) LogOut(context.Context, int, *credentials, string) error { return nil }
 
 func (f *fakeEngine) Self(context.Context, int, *credentials) (string, bool, error) {
 	return "Ada (@ada)", false, nil

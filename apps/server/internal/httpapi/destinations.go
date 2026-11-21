@@ -117,7 +117,13 @@ func (a *API) testDestination(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not load destination")
 		return
 	}
-	if _, err := checkDestination(r.Context(), dest); err != nil {
+	ctx := r.Context()
+	if dest.Provider == store.ProviderTelegram {
+		var cancel context.CancelFunc
+		ctx, cancel = telegramContext(r)
+		defer cancel()
+	}
+	if _, err := checkDestination(ctx, dest); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}

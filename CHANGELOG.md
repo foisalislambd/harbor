@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Telegram destinations sign in as your account with an api_id and api_hash from my.telegram.org. The MTProto session is stored encrypted and is left out of API responses. A regular account uploads one document up to 2 GB, and a Premium account up to 4 GB. Larger backups are split. Retention deletes those messages.
 
+### Fixed
+
+- Requesting a Telegram login code no longer waits forever on a blocked datacenter connection. The attempt stops after about 45 seconds, the same MTProto connection stays open until the code or cloud password is entered, and the panel shows Telegram's error instead of a proxy HTML page. The code is delivered in the Telegram app, in the chat named Telegram, unless Telegram chooses SMS or a call.
+
 ### Changed
 
 - The API guide uses the address the panel is open on. Set `HARBOR_PUBLIC_URL` when that address should be a fixed origin instead. Health reports it as `public_url`.
