@@ -131,6 +131,7 @@ go run ./cmd/harbor serve -addr 127.0.0.1:8787 -data data -panel ../panel/dist
 | `HARBOR_TRUST_PROXY` | empty | Set to `1` only when a reverse proxy is the only client. Harbor then trusts `X-Forwarded-For` for rate limits and request logs. |
 | `HARBOR_SECRET_KEY` | empty | 32-byte key as 64 hex characters or base64. Used only when `secret.key` is not already in the data directory. Back this up outside the volume if you set it. |
 | `HARBOR_ENDPOINT` | `http://127.0.0.1:8787` | Default server for `harbor push`. |
+| `HARBOR_PUBLIC_URL` | empty | Origin used in the panel's example commands, such as `https://harbor.example.com`. A trailing slash is removed. A path, query, or username is rejected at startup. When this is empty, the panel uses the address in the browser. `GET /api/v1/health` returns it as `public_url`. |
 | `HARBOR_TOKEN` | empty | Default project API key for `harbor push`. |
 
 Flags on `harbor serve` override the address, data directory, and panel directory: `-addr`, `-data`, `-panel`.
@@ -165,7 +166,7 @@ With the same key:
 
 Panel users sign in with an HttpOnly session cookie and manage every project from `/`.
 
-`GET /api/v1/health` is public and reports the version and whether an owner still needs to be created.
+`GET /api/v1/health` is public and reports the version, whether an owner still needs to be created, and `public_url` when `HARBOR_PUBLIC_URL` is set.
 
 ## Project structure
 

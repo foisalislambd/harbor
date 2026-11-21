@@ -84,6 +84,7 @@ type Config struct {
 	CookieSecure bool
 	CORSOrigin   string
 	TrustProxy   bool
+	PublicURL    string
 }
 
 func FromEnv() Config {
@@ -96,7 +97,13 @@ func FromEnv() Config {
 		CookieSecure: os.Getenv("HARBOR_COOKIE_SECURE") == "1",
 		CORSOrigin:   strings.TrimSpace(os.Getenv("HARBOR_CORS_ORIGIN")),
 		TrustProxy:   os.Getenv("HARBOR_TRUST_PROXY") == "1",
+		PublicURL:    originEnv(os.Getenv("HARBOR_PUBLIC_URL")),
 	}
+}
+
+// originEnv keeps a configured origin without a trailing slash.
+func originEnv(raw string) string {
+	return strings.TrimRight(strings.TrimSpace(raw), "/")
 }
 
 // Validate checks values that would otherwise be accepted and then misbehave.
@@ -115,6 +122,9 @@ func (c Config) Validate() error {
 	}
 	if c.CORSOrigin != "" && !validCORSOrigin(c.CORSOrigin) {
 		return errConfig("HARBOR_CORS_ORIGIN must be an origin like https://panel.example.com")
+	}
+	if c.PublicURL != "" && !validCORSOrigin(c.PublicURL) {
+		return errConfig("HARBOR_PUBLIC_URL must be an origin like https://harbor.example.com")
 	}
 	return nil
 }
