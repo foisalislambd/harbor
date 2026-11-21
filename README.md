@@ -194,7 +194,7 @@ With the same key:
 
 ## Connect an AI agent
 
-Open the API guide in the panel (`/guide`) and copy the prompt there. That copy already uses this install's address: the address in the browser, or `HARBOR_PUBLIC_URL` when that is set.
+On the API guide (`/guide`), **Copy for AI agent** copies this prompt with this install's address already filled in: the address in the browser, or `HARBOR_PUBLIC_URL` when that is set. The page itself stays the short curl and CLI guide.
 
 The same prompt is below with a placeholder address. Replace `https://your-harbor.example` with the origin you open in the browser, such as `http://127.0.0.1:8787` for a local install. Create a project API key in the panel and paste the key into the chat yourself. The prompt does not contain it.
 

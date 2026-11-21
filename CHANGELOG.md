@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- The README and the API guide include a prompt you can paste into any AI agent. The guide fills in this install's address. The prompt tells the agent how to push, list, download, and delete backups with a project API key, and it does not contain the key.
+- The README includes a prompt you can paste into any AI agent. The API guide stays the short curl and CLI page and adds Copy for AI agent, which copies that prompt with this install's address filled in. The prompt does not contain the API key.
 - Telegram destinations sign in as your account with an api_id and api_hash from my.telegram.org. The MTProto session is stored encrypted and is left out of API responses. A regular account uploads one document up to 2 GB, and a Premium account up to 4 GB. Larger backups are split. Retention deletes those messages.
 
 ### Fixed

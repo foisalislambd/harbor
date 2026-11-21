@@ -38,7 +38,24 @@ export default function GuidePage() {
 
   return (
     <div className="admin-content space-y-3">
-      <AdminPageHeader title="API guide" />
+      <AdminPageHeader
+        title="API guide"
+        actions={
+          <button
+            type="button"
+            className={quietButtonClass}
+            onClick={() => {
+              void copyPrompt(prompt)
+                .then(() => setCopyState("copied"))
+                .catch(() => setCopyState("failed"))
+                .finally(() => window.setTimeout(() => setCopyState("idle"), 2000));
+            }}
+          >
+            {copyState === "copied" ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+            {copyState === "copied" ? "Copied" : copyState === "failed" ? "Could not copy" : "Copy for AI agent"}
+          </button>
+        }
+      />
       <div className="admin-card">
         <div className="admin-card-body space-y-4 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
           <p>
@@ -56,26 +73,6 @@ export default function GuidePage() {
             <li>DELETE {origin}/api/v1/backups/:id</li>
           </ul>
           <p>Kinds are archive, database, files, or other. Identical file contents are stored once and can be referenced by more than one snapshot.</p>
-          <h2 className="text-base font-semibold text-gray-900 dark:text-white">Give this to an AI agent</h2>
-          <p>
-            Copy the prompt and paste it into Cursor, ChatGPT, Claude, or another agent. The address below is this Harbor. Create a project API key in the panel, then paste that key into the chat yourself. The prompt does not contain the key.
-          </p>
-          <div className="flex justify-end">
-            <button
-              type="button"
-              className={quietButtonClass}
-              onClick={() => {
-                void copyPrompt(prompt)
-                  .then(() => setCopyState("copied"))
-                  .catch(() => setCopyState("failed"))
-                  .finally(() => window.setTimeout(() => setCopyState("idle"), 2000));
-              }}
-            >
-              {copyState === "copied" ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-              {copyState === "copied" ? "Copied" : copyState === "failed" ? "Could not copy" : "Copy prompt"}
-            </button>
-          </div>
-          <pre className="overflow-x-auto whitespace-pre-wrap rounded-xl bg-gray-950 p-4 text-xs leading-relaxed text-gray-100">{prompt}</pre>
         </div>
       </div>
     </div>
