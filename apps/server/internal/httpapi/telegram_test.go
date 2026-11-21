@@ -60,4 +60,18 @@ func TestTelegramDestinationHidesAPIHash(t *testing.T) {
 	if !strings.HasPrefix(stored, "enc:v1:") || strings.Contains(stored, hash) {
 		t.Fatalf("secret at rest: %s", stored)
 	}
+	var id string
+	if err := db.QueryRow(`SELECT id FROM destinations`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"name":"Phone","provider":"telegram","account_id":"+15551234567","access_key_id":"123456","endpoint":"@harbor"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/destinations/"+id, strings.NewReader(string(raw)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Harbor-Request", "1")
+	req.Header.Set("Cookie", cookie(setup))
+	renamed := httptest.NewRecorder()
+	handler.ServeHTTP(renamed, req)
+	if renamed.Code != http.StatusOK || strings.Contains(renamed.Body.String(), hash) || !strings.Contains(renamed.Body.String(), `"name":"Phone"`) {
+		t.Fatalf("rename %d %s", renamed.Code, renamed.Body.String())
+	}
 }

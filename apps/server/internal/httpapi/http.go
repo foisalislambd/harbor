@@ -123,6 +123,8 @@ func (a *API) Handler() http.Handler {
 			r.Get("/destination-providers", a.listProviders)
 			r.Get("/destinations", a.listDestinations)
 			r.Post("/destinations", a.createDestination)
+			r.Get("/destinations/{destinationID}", a.getDestination)
+			r.Patch("/destinations/{destinationID}", a.updateDestination)
 			r.Delete("/destinations/{destinationID}", a.deleteDestination)
 			r.Post("/destinations/{destinationID}/test", a.testDestination)
 			r.Post("/destinations/{destinationID}/telegram/code", a.telegramSendCode)

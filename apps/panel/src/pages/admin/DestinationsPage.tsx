@@ -3,15 +3,31 @@ import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { ProviderLogo } from "@/components/provider-logo";
-import { dangerButtonClass, fieldClass, quietButtonClass } from "@/lib/fields";
-import { api, formatBytes, type Destination, type DestinationList, type StorageProvider, type StorageProviderList, type TelegramCode, type TelegramQR } from "@/lib/harbor-api";
+import { dangerButtonClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
+import { api, formatBytes, type Destination, type DestinationList } from "@/lib/harbor-api";
 import { Cloud } from "lucide-react";
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { TelegramSignIn } from "./TelegramSignIn";
+
+type Check = { ok: boolean; message: string };
 
 function formatCap(bytes: number) {
   if (bytes > 0 && bytes % 1_000_000_000 === 0) return `${bytes / 1_000_000_000} GB`;
   return formatBytes(bytes);
+}
+
+function statusOf(destination: Destination, check?: Check) {
+  if (check && !check.ok) return { label: "Error", className: "bg-error-50 text-error-600" };
+  if (destination.provider === "telegram" && !destination.signed_in) return { label: "Needs sign-in", className: "bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-200" };
+  return { label: "Connected", className: "bg-success-50 text-success-600" };
+}
+
+function detail(destination: Destination) {
+  if (destination.provider === "telegram") {
+    return [destination.account_id, destination.endpoint || "Saved Messages", destination.signed_in ? destination.account_label : ""].filter(Boolean).join(" · ");
+  }
+  return [destination.bucket, destination.region, destination.endpoint].filter(Boolean).join(" · ");
 }
 
 export default function DestinationsPage() {
@@ -19,82 +35,27 @@ export default function DestinationsPage() {
   const isOwner = admin?.role === "owner";
   const location = useLocation();
   const [items, setItems] = useState<Destination[] | null>(null);
-  const [providers, setProviders] = useState<StorageProvider[]>([]);
   const [error, setError] = useState<string | null>(null);
   const flash = (location.state as { message?: string } | null)?.message ?? null;
   const [message, setMessage] = useState<string | null>(flash);
-  const [loginID, setLoginID] = useState<string | null>(null);
-  const [loginKind, setLoginKind] = useState<"code" | "qr">("code");
-  const [loginPhase, setLoginPhase] = useState<"code" | "password" | "email" | "email_code">("code");
-  const [qr, setQR] = useState<TelegramQR | null>(null);
-  const [loginCode, setLoginCode] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [loginEmail, setLoginEmail] = useState("");
-  const [delivery, setDelivery] = useState<TelegramCode | null>(null);
+  const [checks, setChecks] = useState<Record<string, Check>>({});
+  const [busy, setBusy] = useState<string | null>(null);
   const [appliedFlash, setAppliedFlash] = useState(flash);
   if (flash !== appliedFlash) {
     setAppliedFlash(flash);
     if (flash) setMessage(flash);
   }
 
-  const groups = useMemo(() => {
-    const order: string[] = [];
-    for (const provider of providers) {
-      if (!order.includes(provider.group)) order.push(provider.group);
-    }
-    return order.map((group) => ({ group, items: providers.filter((item) => item.group === group) }));
-  }, [providers]);
-
   async function load() {
-    const [destinations, catalog] = await Promise.all([
-      api<DestinationList>("/api/v1/destinations"),
-      api<StorageProviderList>("/api/v1/destination-providers"),
-    ]);
+    const destinations = await api<DestinationList>("/api/v1/destinations");
     setItems(destinations.items);
-    setProviders(catalog.items);
   }
 
   useEffect(() => {
-    if (!loginID || loginKind !== "qr" || loginPhase === "password") return;
     let cancelled = false;
-    const poll = () => {
-      void api<TelegramQR>(`/api/v1/destinations/${loginID}/telegram/qr/poll`, { method: "POST" })
-        .then((result) => {
-          if (cancelled) return;
-          if (result.status === "ok") {
-            setMessage(`${result.account_label || "Telegram"} is signed in.`);
-            setLoginID(null);
-            setQR(null);
-            return load();
-          }
-          if (result.status === "password") {
-            setLoginPhase("password");
-            setMessage(result.message || "This account has a cloud password.");
-            return;
-          }
-          setQR(result);
-        })
-        .catch((err: unknown) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : "Could not refresh the QR code");
-        });
-    };
-    const id = window.setInterval(poll, 2000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [loginID, loginKind, loginPhase]);
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      api<DestinationList>("/api/v1/destinations"),
-      api<StorageProviderList>("/api/v1/destination-providers"),
-    ])
-      .then(([destinations, catalog]) => {
-        if (cancelled) return;
-        setItems(destinations.items);
-        setProviders(catalog.items);
+    api<DestinationList>("/api/v1/destinations")
+      .then((destinations) => {
+        if (!cancelled) setItems(destinations.items);
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Could not load destinations");
@@ -107,197 +68,102 @@ export default function DestinationsPage() {
   if (!items && !error) return <AdminLoading message="Loading destinations…" />;
 
   return (
-    <div className="admin-content space-y-3">
-      <AdminPageHeader title="Destinations" />
-      {error && <p className="text-sm text-error-500">{error}</p>}
-      {message && <p className="text-sm text-success-600">{message}</p>}
-
-      {isOwner ? (
-      <section className="admin-card">
-        <div className="admin-card-body space-y-4">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-white">Add storage</h2>
-          <div className="space-y-4">
-            {groups.map((group) => (
-              <div key={group.group}>
-                <p className="mb-2 text-sm text-gray-500">{group.group}</p>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-                  {group.items.map((provider) => (
-                    <Link
-                      key={provider.id}
-                      to={`/destinations/new/${provider.id}`}
-                      className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-left hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:hover:bg-white/5"
-                    >
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white">
-                        <ProviderLogo id={provider.id} />
-                      </span>
-                      <span className="min-w-0 truncate text-sm font-medium text-gray-800 dark:text-gray-100">{provider.name}</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-      ) : (
-        <p className="text-sm text-gray-500">Only the owner can add or remove destinations.</p>
-      )}
+    <div className="admin-content space-y-4">
+      <AdminPageHeader
+        title="Destinations"
+        actions={isOwner ? <Link to="/destinations/new" className={primaryButtonClass}>Add destination</Link> : undefined}
+      />
+      {error && <p className="text-sm text-error-500" role="alert">{error}</p>}
+      {message && <p className="text-sm text-success-600" role="status">{message}</p>}
+      {!isOwner && <p className="text-sm text-gray-500">Only the owner can add or change destinations.</p>}
 
       {items && items.length === 0 ? (
         <div className="admin-card">
-          <AdminEmptyState icon={Cloud} title="No destinations yet" description="Until you add one, every backup stays on this machine." />
+          <AdminEmptyState icon={Cloud} title="No destinations yet" description="Add storage and backups can be copied off this machine." />
         </div>
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-4 lg:grid-cols-2">
           {items?.map((destination) => {
+            const check = checks[destination.id];
+            const status = statusOf(destination, check);
+            const needsSignIn = destination.provider === "telegram" && !destination.signed_in;
             const limit = destination.free_storage_bytes || 0;
-            const accountUsed = destination.account_used_bytes || 0;
-            const width = limit > 0 ? Math.min(100, (Math.min(limit, accountUsed) / limit) * 100) : 0;
-            const where = destination.provider === "telegram"
-              ? [destination.account_id, destination.endpoint || "Saved Messages", destination.region && `topic ${destination.region}`, destination.signed_in ? (destination.account_label || "signed in") : "not signed in"].filter(Boolean).join(" · ")
-              : [destination.bucket, destination.region, destination.endpoint, destination.jurisdiction && `${destination.jurisdiction} jurisdiction`].filter(Boolean).join(" · ");
+            const used = destination.account_used_bytes || 0;
             return (
-              <article key={destination.id} className="admin-card">
-                <div className="admin-card-body space-y-3">
+              <article key={destination.id} className={`admin-card ${needsSignIn ? "lg:col-span-2" : ""}`} aria-labelledby={`dest-${destination.id}`}>
+                <div className="admin-card-body space-y-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
                       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white">
                         <ProviderLogo id={destination.provider} className="h-8 w-8" />
                       </span>
-                      <div>
-                        <h2 className="text-base font-semibold text-gray-900 dark:text-white">{destination.name}</h2>
-                        <p className="text-sm text-gray-500">{destination.provider_name || destination.provider} · {where}</p>
+                      <div className="min-w-0">
+                        <h2 id={`dest-${destination.id}`} className="truncate text-base font-semibold text-gray-900 dark:text-white">{destination.name}</h2>
+                        <p className="truncate text-sm text-gray-500">{destination.provider_name || destination.provider} · {detail(destination)}</p>
                       </div>
                     </div>
-                    {isOwner && (
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        className={quietButtonClass}
-                        onClick={() => {
-                          setError(null);
-                          setMessage(null);
-                          void api(`/api/v1/destinations/${destination.id}/test`, { method: "POST" })
-                            .then(() => setMessage(destination.provider === "telegram" ? `${destination.name} is signed in.` : `${destination.name} can see the bucket.`))
-                            .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not reach this storage"));
-                        }}
-                      >
-                        Test
-                      </button>
-                      <button
-                        type="button"
-                        className={dangerButtonClass}
-                        onClick={() => {
-                          const note = destination.provider === "telegram"
-                            ? `Remove ${destination.name}? Backups stay on this machine. Messages already in the chat stay there.`
-                            : `Remove ${destination.name}? Backups stay on this machine. Files already in the bucket stay there.`;
-                          if (!confirm(note)) return;
-                          setError(null);
-                          void api(`/api/v1/destinations/${destination.id}`, { method: "DELETE" })
-                            .then(load)
-                            .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not remove destination"));
-                        }}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    )}
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${status.className}`}>{status.label}</span>
                   </div>
-                  {limit > 0 && !destination.allow_over_free && (
-                    <>
-                      <p className="text-sm text-gray-500">{formatBytes(accountUsed)} of {formatCap(limit)} stored by Harbor on this account</p>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-                        <div className="h-full bg-brand-500" style={{ width: `${width}%` }} />
-                      </div>
-                    </>
+                  <p className="text-sm text-gray-500">
+                    {check ? (check.ok ? "Last check: connected just now" : `Last check: ${check.message}`) : "Last check: not yet"}
+                  </p>
+                  {limit > 0 && (
+                    <p className="text-sm text-gray-500">{formatBytes(used)} of {formatCap(limit)} stored here{destination.allow_over_free ? ", and copying continues after the free allowance" : ""}</p>
                   )}
-                  {destination.allow_over_free && (
-                    <p className="text-sm text-gray-500">Harbor will keep copying after the free allowance. {formatBytes(accountUsed)} is stored so far.</p>
-                  )}
-                  {destination.provider === "telegram" && isOwner && (
-                    <div className="space-y-2">
-                      {destination.signed_in ? (
-                        <button
-                          type="button"
-                          className={quietButtonClass}
-                          onClick={() => {
-                            if (!confirm(`Log out of Telegram for ${destination.name}? This revokes the session.`)) return;
-                            setError(null);
-                            void api(`/api/v1/destinations/${destination.id}/telegram/logout`, { method: "POST" })
-                              .then(() => {
-                                setMessage(`${destination.name} logged out of Telegram.`);
-                                return load();
-                              })
-                              .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not log out"));
-                          }}
-                        >
+                  {isOwner && (
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className={quietButtonClass} disabled={busy === destination.id} onClick={() => {
+                        setBusy(destination.id);
+                        setError(null);
+                        void api(`/api/v1/destinations/${destination.id}/test`, { method: "POST" })
+                          .then(() => {
+                            setChecks((current) => ({ ...current, [destination.id]: { ok: true, message: "Connected" } }));
+                            setMessage(`${destination.name} is connected.`);
+                          })
+                          .catch((err: unknown) => {
+                            const text = err instanceof Error ? err.message : "Could not reach this storage";
+                            setChecks((current) => ({ ...current, [destination.id]: { ok: false, message: text } }));
+                            setError(text);
+                          })
+                          .finally(() => setBusy(null));
+                      }}>
+                        {busy === destination.id ? "Testing…" : "Test"}
+                      </button>
+                      <Link to={`/destinations/${destination.id}/edit`} className={quietButtonClass}>Edit</Link>
+                      <button type="button" className={dangerButtonClass} onClick={() => {
+                        const note = destination.provider === "telegram"
+                          ? `Remove ${destination.name}? Backups stay on this machine. Messages already in the chat stay there.`
+                          : `Remove ${destination.name}? Backups stay on this machine. Files already in the bucket stay there.`;
+                        if (!confirm(note)) return;
+                        setError(null);
+                        void api(`/api/v1/destinations/${destination.id}`, { method: "DELETE" })
+                          .then(load)
+                          .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not remove destination"));
+                      }}>
+                        Delete
+                      </button>
+                      {destination.provider === "telegram" && destination.signed_in && (
+                        <button type="button" className={quietButtonClass} onClick={() => {
+                          if (!confirm(`Log out of Telegram for ${destination.name}?`)) return;
+                          void api(`/api/v1/destinations/${destination.id}/telegram/logout`, { method: "POST" })
+                            .then(() => {
+                              setMessage(`${destination.name} logged out.`);
+                              return load();
+                            })
+                            .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not log out"));
+                        }}>
                           Log out
                         </button>
-                      ) : (
-                        <TelegramLogin
-                          destinationID={destination.id}
-                          name={destination.name}
-                          active={loginID === destination.id}
-                          kind={loginID === destination.id ? loginKind : "code"}
-                          phase={loginPhase}
-                          qr={loginID === destination.id ? qr : null}
-                          code={loginCode}
-                          password={loginPassword}
-                          email={loginEmail}
-                          delivery={delivery}
-                          onCode={setLoginCode}
-                          onPassword={setLoginPassword}
-                          onEmail={setLoginEmail}
-                          onError={setError}
-                          onMessage={setMessage}
-                          onBegin={(status) => {
-                            setLoginKind("code");
-                            setQR(null);
-                            setLoginID(destination.id);
-                            setDelivery(status);
-                            setLoginCode("");
-                            setLoginPassword("");
-                            setLoginEmail("");
-                            setLoginPhase(status.type === "setup_email" ? "email" : "code");
-                          }}
-                          onBeginQR={(status) => {
-                            setLoginKind("qr");
-                            setDelivery(null);
-                            setQR(status);
-                            setLoginID(destination.id);
-                            setLoginCode("");
-                            setLoginPassword("");
-                            setLoginPhase(status.status === "password" ? "password" : "code");
-                            if (status.status === "ok") {
-                              setMessage(`${status.account_label || destination.name} is signed in.`);
-                              setLoginID(null);
-                              setQR(null);
-                              return load();
-                            }
-                          }}
-                          onDelivery={(status) => {
-                            setDelivery(status);
-                            setLoginPhase(status.type === "setup_email" ? "email" : "code");
-                          }}
-                          onPasswordPhase={() => setLoginPhase("password")}
-                          onEmailCode={() => setLoginPhase("email_code")}
-                          onDone={() => {
-                            setLoginID(null);
-                            setDelivery(null);
-                            setQR(null);
-                            return load();
-                          }}
-                          onCancel={() => {
-                            setLoginID(null);
-                            setDelivery(null);
-                            setQR(null);
-                          }}
-                        />
                       )}
                     </div>
                   )}
-                  {destination.provider !== "telegram" && (
-                    <p className="text-xs text-gray-500">Access key {destination.access_key_id} · prefix {destination.key_prefix}</p>
+                  {needsSignIn && isOwner && (
+                    <TelegramSignIn
+                      destinationID={destination.id}
+                      name={destination.name}
+                      onMessage={setMessage}
+                      onDone={load}
+                    />
                   )}
                 </div>
               </article>
@@ -306,243 +172,5 @@ export default function DestinationsPage() {
         </div>
       )}
     </div>
-  );
-}
-
-function TelegramLogin({
-  destinationID,
-  name,
-  active,
-  kind,
-  phase,
-  qr,
-  code,
-  password,
-  email,
-  delivery,
-  onCode,
-  onPassword,
-  onEmail,
-  onError,
-  onMessage,
-  onBegin,
-  onBeginQR,
-  onDelivery,
-  onPasswordPhase,
-  onEmailCode,
-  onDone,
-  onCancel,
-}: {
-  destinationID: string;
-  name: string;
-  active: boolean;
-  kind: "code" | "qr";
-  phase: "code" | "password" | "email" | "email_code";
-  qr: TelegramQR | null;
-  code: string;
-  password: string;
-  email: string;
-  delivery: TelegramCode | null;
-  onCode: (value: string) => void;
-  onPassword: (value: string) => void;
-  onEmail: (value: string) => void;
-  onError: Dispatch<SetStateAction<string | null>>;
-  onMessage: (value: string) => void;
-  onBegin: (status: TelegramCode) => void;
-  onBeginQR: (status: TelegramQR) => void;
-  onDelivery: (status: TelegramCode) => void;
-  onPasswordPhase: () => void;
-  onEmailCode: () => void;
-  onDone: () => Promise<void> | void;
-  onCancel: () => void;
-}) {
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  useEffect(() => {
-    if (!active || kind !== "qr" || !qr?.expires) return;
-    const id = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
-    return () => window.clearInterval(id);
-  }, [active, kind, qr?.expires]);
-  const qrLeft = qr?.expires ? Math.max(0, qr.expires - now) : qr?.expires_in ?? 0;
-  const fail = (err: unknown, fallback: string) => {
-    const text = err instanceof Error ? err.message : fallback;
-    setLocalError(text);
-    onError(text);
-  };
-  const clear = () => {
-    setLocalError(null);
-    onError(null);
-  };
-  const run = (work: () => Promise<void>) => {
-    if (pending) return;
-    setPending(true);
-    clear();
-    void work().finally(() => setPending(false));
-  };
-  const apply = (status: TelegramCode) => {
-    onMessage(status.message);
-    if (status.type === "already") {
-      onCancel();
-      return onDone();
-    }
-    if (!active) onBegin(status);
-    else onDelivery(status);
-  };
-  return (
-    <>
-      <p className="text-xs text-gray-500">Telegram never delivers a login code to this new Harbor session. An in-app code arrives on a phone that is already signed in, in the chat named Telegram (777000). If that chat stays empty, sign in with the QR code instead: on the phone open Settings, Devices, Link Desktop Device, and scan it. A login code and a QR code are separate attempts.</p>
-      {localError && <p className="text-sm text-error-500">{localError}</p>}
-      {!active && (
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className={quietButtonClass}
-            disabled={pending}
-            onClick={() => {
-              run(() => api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/code`, { method: "POST" })
-                .then(apply)
-                .catch((err: unknown) => fail(err, "Could not send a code")));
-            }}
-          >
-            {pending ? "Sending code..." : "Send login code"}
-          </button>
-          <button
-            type="button"
-            className={quietButtonClass}
-            disabled={pending}
-            onClick={() => {
-              run(() => api<TelegramQR>(`/api/v1/destinations/${destinationID}/telegram/qr`, { method: "POST" })
-                .then((status) => {
-                  onMessage(status.message || "Scan the QR code from the Telegram app.");
-                  onBeginQR(status);
-                })
-                .catch((err: unknown) => fail(err, "Could not start QR login")));
-            }}
-          >
-            {pending ? "Starting QR..." : "Sign in with QR"}
-          </button>
-        </div>
-      )}
-      {active && kind === "qr" && phase !== "password" && qr?.status === "qr" && (
-        <div className="space-y-2">
-          <p className="text-sm text-gray-700 dark:text-gray-200">On the phone, open Telegram, then Settings, Devices, Link Desktop Device, and scan this code. It refreshes before it expires.</p>
-          {qr.image && <img src={qr.image} alt="Telegram login QR code" className="h-52 w-52 rounded-md bg-white p-2" />}
-          <p className="text-sm text-gray-500">Refreshes in {qrLeft}s</p>
-          <button type="button" className={quietButtonClass} disabled={pending} onClick={() => {
-            run(() => api(`/api/v1/destinations/${destinationID}/telegram/cancel`, { method: "POST" })
-              .then(() => {
-                onMessage(`QR login cancelled for ${name}.`);
-                onCancel();
-              })
-              .catch((err: unknown) => fail(err, "Could not cancel QR login")));
-          }}>
-            Cancel
-          </button>
-        </div>
-      )}
-      {active && kind === "qr" && phase === "password" && (
-        <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
-          event.preventDefault();
-          run(() => api<{ status: string }>(`/api/v1/destinations/${destinationID}/telegram/login`, { method: "POST", body: JSON.stringify({ password }) })
-            .then(() => {
-              onMessage(`${name} is signed in.`);
-              return onDone();
-            })
-            .catch((err: unknown) => fail(err, "Could not confirm the password")));
-        }}>
-          <input className={fieldClass} type="password" value={password} onChange={(e) => onPassword(e.target.value)} placeholder="Cloud password" required />
-          <button className={quietButtonClass} type="submit" disabled={pending}>Confirm password</button>
-        </form>
-      )}
-      {active && delivery && (
-        <div className="space-y-2">
-          {delivery.type_name && (
-            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-              Telegram returned {delivery.type_name}
-              {delivery.dc ? ` on datacenter ${delivery.dc}` : ""}.
-            </p>
-          )}
-          <p className="text-sm text-gray-700 dark:text-gray-200">{delivery.message}</p>
-          {!delivery.next_type && delivery.type !== "setup_email" && delivery.type !== "payment" && delivery.type !== "already" && (
-            <p className="text-sm text-gray-700 dark:text-gray-200">Resend is unavailable because Telegram did not return next_type.</p>
-          )}
-          {delivery.url && <a className="text-sm text-brand-600 underline" href={delivery.url} target="_blank" rel="noreferrer">{delivery.url}</a>}
-          {phase === "email" && (
-            <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
-              event.preventDefault();
-              run(() => api<{ email_pattern?: string }>(`/api/v1/destinations/${destinationID}/telegram/email`, { method: "POST", body: JSON.stringify({ email }) })
-                .then((result) => {
-                  onMessage(`Telegram sent a confirmation code to ${result.email_pattern || email}.`);
-                  onEmailCode();
-                })
-                .catch((err: unknown) => fail(err, "Could not send the email code")));
-            }}>
-              <input className={fieldClass} type="email" value={email} onChange={(e) => onEmail(e.target.value)} placeholder="Login email" required disabled={pending} />
-              <button className={quietButtonClass} type="submit" disabled={pending}>Send email code</button>
-            </form>
-          )}
-          {phase === "email_code" && (
-            <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
-              event.preventDefault();
-              run(() => api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/email/verify`, { method: "POST", body: JSON.stringify({ code }) })
-                .then((status) => {
-                  onCode("");
-                  apply(status);
-                })
-                .catch((err: unknown) => fail(err, "Could not confirm the email")));
-            }}>
-              <input className={fieldClass} value={code} onChange={(e) => onCode(e.target.value)} placeholder="Email code" required disabled={pending} />
-              <button className={quietButtonClass} type="submit" disabled={pending}>Confirm email</button>
-            </form>
-          )}
-          {(phase === "code" || phase === "password") && delivery.type !== "setup_email" && delivery.type !== "payment" && (
-            <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
-              event.preventDefault();
-              const body = phase === "password" ? { password } : { code, password };
-              run(() => api<{ status: string }>(`/api/v1/destinations/${destinationID}/telegram/login`, { method: "POST", body: JSON.stringify(body) })
-                .then((result) => {
-                  if (result.status === "password") {
-                    onPasswordPhase();
-                    onMessage("This account has a cloud password.");
-                    return;
-                  }
-                  onMessage(`${name} is signed in.`);
-                  return onDone();
-                })
-                .catch((err: unknown) => fail(err, "Could not sign in")));
-            }}>
-              {phase === "code" ? (
-                <input className={fieldClass} value={code} onChange={(e) => onCode(e.target.value)} placeholder="Login code" required />
-              ) : (
-                <input className={fieldClass} type="password" value={password} onChange={(e) => onPassword(e.target.value)} placeholder="Cloud password" required />
-              )}
-              <button className={quietButtonClass} type="submit" disabled={pending}>{phase === "password" ? "Confirm password" : "Confirm code"}</button>
-            </form>
-          )}
-          <div className="flex flex-wrap gap-2">
-            {delivery.next_type && phase !== "email" && phase !== "email_code" && (
-              <button type="button" className={quietButtonClass} disabled={pending} onClick={() => {
-                run(() => api<TelegramCode>(`/api/v1/destinations/${destinationID}/telegram/resend`, { method: "POST" })
-                  .then(apply)
-                  .catch((err: unknown) => fail(err, "Could not resend the code")));
-              }}>
-                Resend by {delivery.next_type.replaceAll("_", " ")}
-              </button>
-            )}
-            <button type="button" className={quietButtonClass} disabled={pending} onClick={() => {
-              run(() => api(`/api/v1/destinations/${destinationID}/telegram/cancel`, { method: "POST" })
-                .then(() => {
-                  onMessage(`Login cancelled for ${name}.`);
-                  onCancel();
-                })
-                .catch((err: unknown) => fail(err, "Could not cancel the code")));
-            }}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-    </>
   );
 }

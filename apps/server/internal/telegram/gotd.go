@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -252,8 +251,7 @@ func (g gotdEngine) exchangeCode(ctx context.Context, apiID int, phone string, c
 	}
 	status.DC = sessionDC(cred.Session)
 	if status.DC > 0 {
-		status.Message += fmt.Sprintf(" Datacenter %d, same login connection as the code.", status.DC)
-		log.Printf("telegram auth.sentCode dc=%d type=%s", status.DC, status.TypeName)
+		log.Printf("telegram auth.sentCode dc=%d type=%s next_type=%s timeout=%d", status.DC, status.TypeName, status.NextTypeName, status.Timeout)
 	}
 	if cred.PhoneCodeHash != "" && len(cred.Session) == 0 {
 		return status, errors.New("telegram did not keep the login session, so this code cannot be confirmed")

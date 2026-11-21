@@ -1317,6 +1317,29 @@ func (s *Store) CreateDestination(ctx context.Context, d Destination) (Destinati
 	return s.GetDestination(ctx, d.ID)
 }
 
+// UpdateDestination replaces the saved fields. Secret must already be the plaintext to seal.
+func (s *Store) UpdateDestination(ctx context.Context, d Destination) (Destination, error) {
+	d.UpdatedAt = Now()
+	over := 0
+	if d.AllowOverFree {
+		over = 1
+	}
+	sealed, err := s.box.Seal(d.Secret)
+	if err != nil {
+		return Destination{}, err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE destinations SET name = ?, account_id = ?, access_key_id = ?, secret_access_key = ?, bucket = ?, jurisdiction = ?, region = ?, endpoint = ?, allow_over_free = ?, key_prefix = ?, updated_at = ? WHERE id = ?`,
+		d.Name, d.AccountID, d.AccessKeyID, sealed, d.Bucket, d.Jurisdiction, d.Region, d.Endpoint, over, d.KeyPrefix, d.UpdatedAt, d.ID)
+	if err != nil {
+		return Destination{}, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return Destination{}, ErrNotFound
+	}
+	return s.GetDestination(ctx, d.ID)
+}
+
 // UpdateDestinationSecret replaces the sealed credential for one destination.
 func (s *Store) UpdateDestinationSecret(ctx context.Context, destinationID, secret string) error {
 	sealed, err := s.box.Seal(secret)

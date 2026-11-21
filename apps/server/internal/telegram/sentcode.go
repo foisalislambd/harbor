@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/gotd/td/tg"
 )
@@ -184,61 +183,36 @@ func tlName(v any) string {
 }
 
 func sentMessage(status CodeStatus) string {
-	var text string
 	switch status.Type {
 	case "app":
-		text = "Telegram returned auth.sentCodeTypeApp. The code is a service message in the chat named Telegram (777000) on devices that are already signed in. This Harbor session does not receive it."
-		if status.NextType == "" {
-			text += " next_type is empty, so Resend cannot switch this to SMS. If chat 777000 stays empty, Telegram accepted the request and did not deliver the message. A new api_id does not change that. Harbor does not call auth.cancelCode unless you press Cancel."
-		}
-	case "sms":
-		text = "Telegram sent the code by SMS."
+		return "Enter the code from the Telegram app on your phone."
+	case "sms", "sms_word", "sms_phrase":
+		return "Enter the code from the text message."
 	case "call":
-		text = "Telegram is calling this number and will read the code."
+		return "Answer the call and write down the code."
 	case "flash_call":
-		text = "Telegram will flash-call this number. The calling phone number is the code."
+		return "The incoming phone number is the code."
 	case "missed_call":
-		text = "Telegram will call and hang up. The last digits of that phone number are the code."
+		return "The last digits of the missed call are the code."
 	case "fragment_sms":
-		text = "Telegram sent the code through Fragment."
 		if status.URL != "" {
-			text += " Open " + status.URL + ", sign in with the wallet for this number, and read the code there."
-		} else {
-			text += " Sign in at fragment.com with the wallet for this number and read the code there."
+			return "Open the link and read the code there."
 		}
+		return "Open Fragment and read the code there."
 	case "email":
 		if status.EmailPattern != "" {
-			text = "Telegram sent the login code to the login email " + status.EmailPattern + "."
-		} else {
-			text = "Telegram sent the login code to the login email on this account."
+			return "Enter the code sent to " + status.EmailPattern + "."
 		}
+		return "Enter the code sent to your email."
 	case "setup_email":
-		text = "Telegram will not send a login code until this number has a login email. Enter an email you can open. Telegram sends a confirmation code there, and then the login code."
+		return "Enter an email address you can open."
 	case "firebase_sms":
-		text = "Telegram asked for a Firebase SMS check that only official mobile apps can finish. Resend the code to use the next method."
-	case "sms_word":
-		text = "Telegram sent an SMS containing one word. That word is the code."
-	case "sms_phrase":
-		text = "Telegram sent an SMS containing a phrase. That phrase is the code."
+		return "Telegram could not text this number. Use the QR code instead."
+	case "payment":
+		return "Telegram asked for a paid login that this app cannot finish. Use the QR code instead."
+	case "already":
+		return "This account is already signed in."
 	default:
-		text = "Telegram answered auth.sentCode with type " + status.Type + "."
+		return "Enter the code Telegram sent you."
 	}
-	if status.Length > 0 && status.Type != "setup_email" && status.Type != "flash_call" {
-		text += fmt.Sprintf(" It is %d characters.", status.Length)
-	}
-	if status.NextType != "" {
-		wait := ""
-		if status.Timeout > 0 {
-			wait = fmt.Sprintf(" If it does not arrive within %d seconds, resend it", status.Timeout)
-		} else {
-			wait = " If it does not arrive, resend it"
-		}
-		text += wait + " by " + strings.ReplaceAll(status.NextType, "_", " ") + "."
-	} else if status.Type != "app" && status.Type != "setup_email" && status.Type != "already" && status.Type != "payment" {
-		text += " Telegram did not set next_type, so Resend cannot switch the delivery to SMS."
-	}
-	if status.TypeName != "" {
-		text = status.TypeName + ". " + text
-	}
-	return text
 }

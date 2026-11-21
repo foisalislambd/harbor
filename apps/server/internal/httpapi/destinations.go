@@ -81,6 +81,75 @@ func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, decorateDestination(created))
 }
 
+func (a *API) getDestination(w http.ResponseWriter, r *http.Request) {
+	dest, err := a.store.GetDestination(r.Context(), chi.URLParam(r, "destinationID"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "destination not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load destination")
+		return
+	}
+	writeJSON(w, http.StatusOK, decorateDestination(dest))
+}
+
+func (a *API) updateDestination(w http.ResponseWriter, r *http.Request) {
+	if !requireOwner(w, r) {
+		return
+	}
+	current, err := a.store.GetDestination(r.Context(), chi.URLParam(r, "destinationID"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "destination not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load destination")
+		return
+	}
+	var body destinationBody
+	if !readJSON(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Provider) == "" {
+		body.Provider = current.Provider
+	}
+	if body.Provider != current.Provider {
+		writeError(w, http.StatusBadRequest, "the storage service cannot be changed")
+		return
+	}
+	if strings.TrimSpace(body.SecretAccessKey) == "" {
+		body.SecretAccessKey = current.Secret
+	}
+	dest, err := normalizeDestination(body, false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if dest.Provider == store.ProviderTelegram && (dest.AccessKeyID != current.AccessKeyID || dest.AccountID != current.AccountID) {
+		plain, err := telegram.WithoutSession(dest.Secret)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		dest.Secret = plain
+	}
+	if dest.Provider != store.ProviderTelegram {
+		if _, err := checkDestination(r.Context(), dest); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	dest.ID = current.ID
+	updated, err := a.store.UpdateDestination(r.Context(), dest)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not save destination")
+		return
+	}
+	a.store.AddAudit(r.Context(), principalFrom(r).Actor(), "destination.updated", updated.ID, updated.Name)
+	writeJSON(w, http.StatusOK, decorateDestination(updated))
+}
+
 func (a *API) deleteDestination(w http.ResponseWriter, r *http.Request) {
 	if !requireOwner(w, r) {
 		return

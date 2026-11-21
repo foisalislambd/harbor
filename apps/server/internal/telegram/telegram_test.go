@@ -70,7 +70,7 @@ func TestLoginUploadAndDelete(t *testing.T) {
 	if fake.seenSession != "" || client.cred.PhoneCodeHash == "stale-hash" {
 		t.Fatalf("stale session %q hash %q", fake.seenSession, client.cred.PhoneCodeHash)
 	}
-	if !strings.Contains(delivery.Message, "auth.sentCodeTypeApp") || !strings.Contains(delivery.Message, "777000") {
+	if strings.Contains(delivery.Message, "auth.") || strings.Contains(delivery.Message, "Datacenter") {
 		t.Fatal(delivery.Message)
 	}
 	if _, err := client.SignIn(context.Background(), "12345"); !errors.Is(err, ErrPasswordNeeded) {

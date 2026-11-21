@@ -19,7 +19,7 @@ func TestDescribeSentCode(t *testing.T) {
 	if got.Type != "app" || got.TypeName != "auth.sentCodeTypeApp" || got.NextType != "sms" || got.NextTypeName != "auth.codeTypeSms" || got.Timeout != 60 || got.Length != 5 {
 		t.Fatalf("%+v", got)
 	}
-	if !strings.Contains(got.Message, "auth.sentCodeTypeApp") || !strings.Contains(got.Message, "777000") || !strings.Contains(got.Message, "60 seconds") || !strings.Contains(got.Message, "sms") {
+	if strings.Contains(got.Message, "auth.") || !strings.Contains(got.Message, "Telegram app") {
 		t.Fatal(got.Message)
 	}
 
@@ -28,15 +28,15 @@ func TestDescribeSentCode(t *testing.T) {
 		t.Fatalf("%+v", email)
 	}
 	setup := describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeSetUpEmailRequired{}})
-	if setup.Type != "setup_email" || setup.TypeName != "auth.sentCodeTypeSetUpEmailRequired" || setup.needsLoginCode() || !strings.Contains(setup.Message, "login email") {
+	if setup.Type != "setup_email" || setup.TypeName != "auth.sentCodeTypeSetUpEmailRequired" || setup.needsLoginCode() || !strings.Contains(setup.Message, "email address") {
 		t.Fatalf("%+v", setup)
 	}
 	fragment := describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeFragmentSMS{URL: "https://fragment.com", Length: 6}})
-	if fragment.Type != "fragment_sms" || fragment.TypeName != "auth.sentCodeTypeFragmentSms" || fragment.URL != "https://fragment.com" || !strings.Contains(fragment.Message, "https://fragment.com") {
+	if fragment.Type != "fragment_sms" || fragment.TypeName != "auth.sentCodeTypeFragmentSms" || fragment.URL != "https://fragment.com" || strings.Contains(fragment.Message, "auth.") {
 		t.Fatalf("%+v", fragment)
 	}
 	firebase := describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeFirebaseSMS{Length: 5}})
-	if firebase.Type != "firebase_sms" || firebase.TypeName != "auth.sentCodeTypeFirebaseSms" || !strings.Contains(firebase.Message, "auth.sentCodeTypeFirebaseSms") {
+	if firebase.Type != "firebase_sms" || firebase.TypeName != "auth.sentCodeTypeFirebaseSms" || strings.Contains(firebase.Message, "auth.") {
 		t.Fatalf("%+v", firebase)
 	}
 	if describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeCall{Length: 5}}).Type != "call" {
@@ -49,7 +49,7 @@ func TestDescribeSentCode(t *testing.T) {
 		t.Fatal("missed")
 	}
 	appOnly := describeSentCode(&tg.AuthSentCode{Type: &tg.AuthSentCodeTypeApp{Length: 5}, PhoneCodeHash: "hash"})
-	if appOnly.NextType != "" || !strings.Contains(appOnly.Message, "next_type is empty") || !strings.Contains(appOnly.Message, "cannot switch this to SMS") || !strings.Contains(appOnly.Message, "auth.cancelCode") {
+	if appOnly.NextType != "" || strings.Contains(appOnly.Message, "auth.") || strings.Contains(appOnly.Message, "next_type") {
 		t.Fatal(appOnly.Message)
 	}
 }

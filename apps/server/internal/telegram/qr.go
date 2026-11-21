@@ -82,7 +82,7 @@ func (q *qrPending) viewLocked() QRStatus {
 		status.Status = "ok"
 	case q.password:
 		status.Status = "password"
-		status.Message = "This account has a cloud password."
+		status.Message = "Enter your cloud password."
 	default:
 		status.Status = "qr"
 		status.Expires = q.expires.Unix()
@@ -91,7 +91,7 @@ func (q *qrPending) viewLocked() QRStatus {
 			left = 0
 		}
 		status.ExpiresIn = left
-		status.Message = "On the phone, open Telegram, then Settings, Devices, Link Desktop Device, and scan this code."
+		status.Message = "Scan this code with Telegram."
 	}
 	return status
 }

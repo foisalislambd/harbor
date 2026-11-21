@@ -69,6 +69,19 @@ func decodeCredentials(secret string) (credentials, error) {
 	return cred, nil
 }
 
+// WithoutSession keeps the api hash and drops a saved login.
+// A plain secret is returned unchanged.
+func WithoutSession(secret string) (string, error) {
+	if !strings.HasPrefix(strings.TrimSpace(secret), "{") {
+		return secret, nil
+	}
+	cred, err := decodeCredentials(secret)
+	if err != nil {
+		return "", err
+	}
+	return encodeCredentials(credentials{APIHash: cred.APIHash})
+}
+
 // PublicStatus reports whether a destination is signed in, without its secrets.
 func PublicStatus(secret string) (signedIn bool, label string) {
 	cred, err := decodeCredentials(secret)
