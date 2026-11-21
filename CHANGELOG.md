@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The API guide uses the address the panel is open on. Set `HARBOR_PUBLIC_URL` when that address should be a fixed origin instead. Health reports it as `public_url`.
 
 - Panel pages use the full width beside the sidebar, with the same padding on narrow and wide screens.
+- The sidebar stays in the page row on wide screens, so destination cards and the other pages start to the right of it instead of underneath. On a narrow screen it stays off to the side until the menu is opened.
 
 ## [0.2.0] - 2026-11-20
 
