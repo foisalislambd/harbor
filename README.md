@@ -18,6 +18,7 @@ The panel is at `/`. The API is at `/api/v1`. Run it on a PC, a VPS, or in Docke
 - Schedules that turn overdue when a backup does not arrive in time.
 - Webhooks for `backup.created` and `backup.deleted`, signed with `X-Harbor-Signature`.
 - A second copy in object storage. Cloudflare R2, Backblaze B2, Amazon S3, Wasabi, Google Cloud Storage, DigitalOcean Spaces, Hetzner, Scaleway, Linode, Vultr, OVH, Exoscale, Storj, Tigris, Filebase, IDrive e2, Oracle, IBM, Alibaba, Tencent, Contabo, Supabase, MEGA, and self-hosted S3 (MinIO, Ceph, Garage, SeaweedFS, or another S3-compatible endpoint) use the same form. Harbor checks the bucket before saving. R2 and B2 stop at their 10 GB free allowance unless you allow more.
+- A Telegram destination. Create an application at my.telegram.org, sign in as your account, and Harbor uploads each backup as a document. The api hash and MTProto session are encrypted at rest and are not shown again.
 - An audit log, extra panel users, and a background retention pass every 15 minutes.
 
 ## Screens
@@ -36,14 +37,39 @@ Projects, backups, and destinations:
 
 ![Destinations](docs/screenshots/destinations.png)
 
+![Telegram destination](docs/screenshots/telegram.png)
+
 The API guide, activity log, and settings are in the sidebar: [guide](docs/screenshots/guide.png), [activity](docs/screenshots/activity.png), [settings](docs/screenshots/settings.png).
+
+## Telegram
+
+Harbor uploads with the MTProto API as your user account, the same way Telethon, Pyrogram, and [gotd](https://github.com/gotd/td) do. It does not use a bot token.
+
+1. Open [my.telegram.org/apps](https://my.telegram.org/apps) and create an application. Copy the api_id and api_hash. The api_id is a number. The api_hash is shown once in the form and then stored encrypted.
+2. In Harbor, open Destinations, choose Telegram, and enter the api_id, api_hash, and the phone number of the account that should send backups.
+3. Leave the target empty to use Saved Messages. Otherwise enter a public `@username`, an invite link, or the numeric id of a chat already on that account. A forum topic id is optional. An invite link joins the chat if you are not already in it.
+4. Save the destination, then choose Send login code. Enter the code Telegram delivers to the app, SMS, or a call. If the account has a cloud password, enter that next. Log out on the same card to call `auth.logOut` and delete the saved session.
+5. Choose that destination on a project. Each backup is one document. The caption includes the project, backup name, kind, size, timestamp, and the SHA-256 of the whole file.
+
+A regular account can send one document of up to 2 GB (4000 parts of 512 KB). A Premium account can send 4 GB (8000 parts). Harbor reads the Premium flag on the signed-in user. Anything larger is split into numbered files named `harbor-<name>-partNN-of-NN.bin`. Download those parts in order and join them:
+
+```bash
+cat harbor-nightly-part01-of-03.bin harbor-nightly-part02-of-03.bin harbor-nightly-part03-of-03.bin > nightly.bin
+sha256sum nightly.bin
+```
+
+Files at or under the account limit are uploaded with `upload.saveBigFilePart` when they are over 10 MB, as one document. Harbor keeps one MTProto connection open for the whole upload, retries `FLOOD_WAIT` for up to two minutes, and retries a failed backup from the start on the next copy. A copy that already succeeded is not uploaded again. Telegram only keeps unfinished upload parts for a short time, so a partial upload is not resumed across a restart.
+
+When retention deletes a backup, Harbor calls `messages.deleteMessages` for Saved Messages, private chats, and basic groups, and `channels.deleteMessages` for channels and supergroups. Removing the destination leaves the messages in the chat.
+
+This session can send and read messages as that user. Keep the data directory as carefully as a password database, and log out if the account should stop being used. The api hash and session are never returned by the API.
 
 ## Tech stack
 
-- Go 1.26 server (`chi`, `modernc.org/sqlite`, bcrypt)
+- Go 1.26 server (`chi`, `modernc.org/sqlite`, bcrypt, `gotd` for Telegram)
 - React 19 panel (Vite, TypeScript, Tailwind CSS 4)
 - SQLite for metadata, files on disk for blobs
-- Optional S3-compatible replication, implemented in-process (no extra daemon)
+- Optional S3-compatible replication, and Telegram document uploads, implemented in-process (no extra daemon)
 
 ## Quick start
 

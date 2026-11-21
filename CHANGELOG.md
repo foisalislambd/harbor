@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security
+
+- The Telegram client pulls in `github.com/andybalholm/brotli` 1.2.7 and `github.com/klauspost/compress` 1.20.2, which include the fixes for GO-2026-6888 and GO-2026-6865.
+
+### Added
+
+- Telegram destinations sign in as your account with an api_id and api_hash from my.telegram.org. The MTProto session is stored encrypted and is left out of API responses. A regular account uploads one document up to 2 GB, and a Premium account up to 4 GB. Larger backups are split. Retention deletes those messages.
+
 ### Changed
 
 - Panel pages use the full width beside the sidebar, with the same padding on narrow and wide screens.

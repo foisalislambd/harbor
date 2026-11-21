@@ -11,6 +11,7 @@ import (
 	"harbor/internal/providers"
 	"harbor/internal/replicate"
 	"harbor/internal/store"
+	"harbor/internal/telegram"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -23,7 +24,15 @@ func (a *API) listDestinations(w http.ResponseWriter, r *http.Request) {
 	}
 	views := make([]destinationView, 0, len(items))
 	for _, item := range items {
-		view := withFree(item)
+		view := decorateDestination(item)
+		if item.Provider == store.ProviderTelegram {
+			full, err := a.store.GetDestination(r.Context(), item.ID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "could not list destinations")
+				return
+			}
+			view.SignedIn, view.AccountLabel = telegram.PublicStatus(full.Secret)
+		}
 		scope := item.AccountID
 		if scope == "" {
 			scope = item.AccessKeyID
@@ -56,9 +65,11 @@ func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := checkDestination(r.Context(), dest); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+	if dest.Provider != store.ProviderTelegram {
+		if _, err := checkDestination(r.Context(), dest); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	created, err := a.store.CreateDestination(r.Context(), dest)
 	if err != nil {
@@ -67,7 +78,7 @@ func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
 	}
 	actor := principalFrom(r)
 	a.store.AddAudit(r.Context(), actor.Actor(), "destination.created", created.ID, created.Name)
-	writeJSON(w, http.StatusCreated, withFree(created))
+	writeJSON(w, http.StatusCreated, decorateDestination(created))
 }
 
 func (a *API) deleteDestination(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +117,7 @@ func (a *API) testDestination(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not load destination")
 		return
 	}
-	if err := checkDestination(r.Context(), dest); err != nil {
+	if _, err := checkDestination(r.Context(), dest); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -173,6 +184,19 @@ type destinationView struct {
 	ProviderName     string `json:"provider_name"`
 	FreeStorageBytes int64  `json:"free_storage_bytes"`
 	AccountUsedBytes int64  `json:"account_used_bytes"`
+	SignedIn         bool   `json:"signed_in"`
+	AccountLabel     string `json:"account_label,omitempty"`
+}
+
+func decorateDestination(d store.Destination) destinationView {
+	signed, label := false, ""
+	if d.Provider == store.ProviderTelegram {
+		signed, label = telegram.PublicStatus(d.Secret)
+	}
+	view := withFree(d)
+	view.SignedIn = signed
+	view.AccountLabel = label
+	return view
 }
 
 func withFree(d store.Destination) destinationView {
@@ -188,6 +212,20 @@ func normalizeDestination(body destinationBody, creating bool) (store.Destinatio
 	name := strings.TrimSpace(body.Name)
 	if name == "" || len(name) > 80 {
 		return store.Destination{}, errors.New("destination name is required")
+	}
+	if body.Provider == store.ProviderTelegram {
+		secret := strings.TrimSpace(body.SecretAccessKey)
+		access := strings.TrimSpace(body.AccessKeyID)
+		if creating && !validSecret(secret) {
+			return store.Destination{}, errors.New("api hash is required")
+		}
+		if !validAccess(access) {
+			return store.Destination{}, errors.New("api id is required")
+		}
+		return providers.Prepare(store.Destination{
+			Name: name, Provider: body.Provider, AccountID: body.AccountID,
+			AccessKeyID: access, Secret: secret, Region: body.Region, Endpoint: body.Endpoint,
+		})
 	}
 	access := strings.TrimSpace(body.AccessKeyID)
 	if !validAccess(access) {
@@ -287,12 +325,15 @@ func validPrefix(prefix string) bool {
 	return !strings.HasPrefix(prefix, "/") && !strings.HasSuffix(prefix, "/")
 }
 
-func checkDestination(ctx context.Context, dest store.Destination) error {
-	client, err := providers.Open(dest)
+func checkDestination(ctx context.Context, dest store.Destination) (interface{ Check(context.Context) error }, error) {
+	client, err := providers.Connect(dest)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	return client.Check(ctx)
+	if err := client.Check(ctx); err != nil {
+		return nil, err
+	}
+	return client, nil
 }
