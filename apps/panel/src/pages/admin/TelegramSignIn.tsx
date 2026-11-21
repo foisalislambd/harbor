@@ -125,8 +125,8 @@ export function TelegramSignIn({
           <button className={quietButtonClass} type="submit" disabled={pending}>Continue</button>
         </form>
       ) : qr?.image ? (
-        <div className="flex flex-col items-start gap-2">
-          <img src={qr.image} alt="QR code to link this Telegram account" className="h-52 w-52 rounded-lg bg-white p-2" />
+        <div className="flex flex-col items-center gap-2">
+          <img src={qr.image} alt="QR code to link this Telegram account" className="h-80 w-80 max-w-full rounded-lg bg-white p-3" />
           <p className="text-sm text-gray-500" aria-live="polite">Refreshes in {left}s</p>
         </div>
       ) : (

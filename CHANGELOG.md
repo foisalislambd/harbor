@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- The Telegram QR code is drawn across the whole image, so it shows large enough to scan.
 - Telegram sign-in leads with a QR code (`auth.exportLoginToken`, then `auth.importLoginToken` when the account is on another datacenter, then `auth.checkPassword` when a cloud password is required). Phone login is one `auth.sendCode`, then `auth.signIn`, on the same connection. A second click waits for the request already in flight. The panel does not show protocol names, and it does not offer resend or cancel.
 - The Destinations page lists each destination with its status and Test, Edit, and Delete actions. Adding one starts from a service grid, then a short form. Telegram sign-in leads with the QR code. The page does not show protocol names or datacenter numbers.
 - Requesting a Telegram login code stops after about 45 seconds, keeps that MTProto connection open until the code or cloud password is entered, and the panel shows Telegram's error instead of a proxy HTML page.
