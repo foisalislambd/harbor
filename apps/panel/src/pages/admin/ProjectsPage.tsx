@@ -4,7 +4,7 @@ import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { fieldClass, labelClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
 import { api, formatBytes, type Project } from "@/lib/harbor-api";
-import { Archive, FolderKanban, HardDrive, X } from "lucide-react";
+import { FolderKanban, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -85,47 +85,30 @@ export default function ProjectsPage() {
           />
         </div>
       ) : (
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {projects?.map((project) => (
             <Link key={project.id} to={`/projects/${project.id}`} className="admin-card transition hover:border-brand-300 hover:shadow-sm">
-              <div className="admin-card-body">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <span className="admin-icon-well h-10 w-10 rounded-xl">
-                      <FolderKanban className="h-[18px] w-[18px]" aria-hidden />
+              <div className="flex items-center gap-3 px-4 py-3">
+                <span className="admin-icon-well">
+                  <FolderKanban className="h-4 w-4" aria-hidden />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="truncate text-sm font-semibold text-gray-900 dark:text-white">{project.name}</h2>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
+                        project.status === "active"
+                          ? "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500"
+                          : "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300"
+                      }`}
+                    >
+                      {project.status}
                     </span>
-                    <div className="min-w-0">
-                      <h2 className="truncate text-base font-semibold text-gray-900 dark:text-white">{project.name}</h2>
-                      <p className="mt-0.5 line-clamp-2 text-sm text-gray-500">{project.description || "No description"}</p>
-                    </div>
                   </div>
-                  <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                      project.status === "active"
-                        ? "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500"
-                        : "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300"
-                    }`}
-                  >
-                    {project.status}
-                  </span>
+                  <p className="mt-1 truncate text-xs text-gray-500">
+                    {project.backup_count} backups · {formatBytes(project.used_bytes)} · {project.destination_name || "This machine"}
+                  </p>
                 </div>
-                <dl className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-gray-800">
-                  <div className="flex items-center gap-2">
-                    <Archive className="h-3.5 w-3.5 text-gray-400" aria-hidden />
-                    <div>
-                      <dt>Backups</dt>
-                      <dd className="text-sm font-medium text-gray-900 dark:text-white">{project.backup_count}</dd>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <HardDrive className="h-3.5 w-3.5 text-gray-400" aria-hidden />
-                    <div>
-                      <dt>Stored</dt>
-                      <dd className="text-sm font-medium text-gray-900 dark:text-white">{formatBytes(project.used_bytes)}</dd>
-                    </div>
-                  </div>
-                </dl>
-                <p className="mt-3 text-xs text-gray-500">{project.destination_name ? `Also copies to ${project.destination_name}` : "This machine only"}</p>
               </div>
             </Link>
           ))}
