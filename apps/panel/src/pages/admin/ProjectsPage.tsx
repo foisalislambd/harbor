@@ -4,7 +4,7 @@ import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { fieldClass, labelClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
 import { api, formatBytes, type Project } from "@/lib/harbor-api";
-import { Archive, FolderKanban, HardDrive } from "lucide-react";
+import { Archive, FolderKanban, HardDrive, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -133,21 +133,26 @@ export default function ProjectsPage() {
       )}
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-gray-950/40 p-4 sm:items-center" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-gray-950/50 p-4 sm:items-center" onClick={() => setOpen(false)}>
           <form
             onClick={(e) => e.stopPropagation()}
             onSubmit={createProject}
-            className="admin-card admin-dialog w-full max-w-lg"
+            className="admin-dialog w-full max-w-md overflow-hidden rounded-xl border border-gray-200 shadow-xl dark:border-[#3a4860]"
           >
-            <div className="admin-card-body space-y-4">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">New project</h2>
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-[#3a4860]">
+              <h2 className="text-base font-semibold text-gray-900 dark:text-white">New project</h2>
+              <button type="button" onClick={() => setOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10" aria-label="Close">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-4 px-5 py-5">
               <label className="block">
                 <span className={labelClass}>Name</span>
-                <input className={fieldClass} required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                <input className={fieldClass} required placeholder="Photos" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               </label>
               <label className="block">
                 <span className={labelClass}>Description</span>
-                <input className={fieldClass} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+                <input className={fieldClass} placeholder="Optional" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
               </label>
               <div className="grid grid-cols-3 gap-3">
                 <label className="block">
@@ -163,11 +168,10 @@ export default function ProjectsPage() {
                   <input className={fieldClass} type="number" min={0} value={form.quota_gb} onChange={(e) => setForm({ ...form, quota_gb: Number(e.target.value) })} />
                 </label>
               </div>
-              <p className="text-xs text-gray-500">Zero means unlimited. Retention removes older snapshots after a new backup arrives.</p>
-              <div className="flex justify-end gap-2">
-                <button type="button" className={quietButtonClass} onClick={() => setOpen(false)}>Cancel</button>
-                <button type="submit" className={primaryButtonClass} disabled={saving}>{saving ? "Saving…" : "Create"}</button>
-              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4 dark:border-[#3a4860]">
+              <button type="button" className={quietButtonClass} onClick={() => setOpen(false)}>Cancel</button>
+              <button type="submit" className={primaryButtonClass} disabled={saving}>{saving ? "Saving…" : "Create"}</button>
             </div>
           </form>
         </div>

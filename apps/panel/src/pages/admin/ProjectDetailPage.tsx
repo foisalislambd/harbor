@@ -132,15 +132,11 @@ export default function ProjectDetailPage() {
   if (error && !project) return <p className="text-sm text-error-500">{error}</p>;
   if (!project) return <AdminLoading message="Loading project…" />;
 
-  const quotaLabel = project.quota_bytes > 0 ? `${formatBytes(project.used_bytes)} / ${formatBytes(project.quota_bytes)}` : `${formatBytes(project.used_bytes)} stored`;
-
   return (
     <div className="admin-content space-y-6">
       <AdminPageHeader
         title={project.name}
         actions={
-          <>
-          <CopyAgentButton prompt={agentPrompt(origin, project.name)} />
           <button
             type="button"
             className={solidDangerButtonClass}
@@ -154,11 +150,9 @@ export default function ProjectDetailPage() {
             <Trash2 className="h-4 w-4" aria-hidden />
             Delete project
           </button>
-          </>
         }
       />
       {error && <p className="text-sm text-error-500">{error}</p>}
-      <p className="text-sm text-gray-500">Slug {project.slug} · {quotaLabel} · {project.backup_count} backups</p>
       {project.quota_bytes > 0 && project.used_bytes > project.quota_bytes && (
         <p className="text-sm text-orange-700 dark:text-orange-300">
           This project is over its quota. New uploads are rejected until you raise the quota or delete backups.
@@ -275,7 +269,12 @@ export default function ProjectDetailPage() {
 
       <section className="admin-card">
         <div className="admin-card-body space-y-4">
-          <AdminSectionTitle icon={KeyRound} title="API keys" description="Send this key as Authorization: Bearer from the application. The full key is shown once." />
+          <AdminSectionTitle
+            icon={KeyRound}
+            title="API keys"
+            description="Send this key as Authorization: Bearer from the application. The full key is shown once."
+            actions={<CopyAgentButton prompt={agentPrompt(origin, project.name)} />}
+          />
           {freshToken && (
             <div className="rounded-xl bg-brand-50 p-3 text-sm break-all text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
               {freshToken}

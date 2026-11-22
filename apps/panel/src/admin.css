@@ -16,16 +16,16 @@
 .dark .admin-shell input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="button"]):not([type="submit"]),
 .dark .admin-shell select,
 .dark .admin-shell textarea {
-  background-color: #121a27;
-  border-color: #3a4860;
-  color: #f9fafb;
+  background-color: #121a27 !important;
+  border-color: #3a4860 !important;
+  color: #f9fafb !important;
   color-scheme: dark;
 }
 
 .dark .admin-field::placeholder,
 .dark .admin-shell input::placeholder,
 .dark .admin-shell textarea::placeholder {
-  color: #98a2b3;
+  color: #98a2b3 !important;
 }
 
 .admin-code {
