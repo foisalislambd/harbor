@@ -178,7 +178,7 @@ export function TelegramSignIn({
             </button>
           )}
           {delivery && <p className="text-sm text-gray-700 dark:text-gray-200">{delivery.message}</p>}
-          {delivery?.url && <a className="text-sm text-brand-600 underline" href={delivery.url} target="_blank" rel="noreferrer">Open the link</a>}
+          {delivery?.url && <a className="text-sm text-brand-600 underline dark:text-brand-300" href={delivery.url} target="_blank" rel="noreferrer">Open the link</a>}
           {phase === "email" && (
             <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => {
               event.preventDefault();

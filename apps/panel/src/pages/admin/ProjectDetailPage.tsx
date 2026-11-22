@@ -219,7 +219,7 @@ export default function ProjectDetailPage() {
             </div>
             <p className="mt-1.5 text-xs text-gray-500">
               Backups stay on this machine either way. Pick a destination to also keep a second copy. Add one on the{" "}
-              <Link to="/destinations" className="font-medium text-brand-600">Destinations</Link> page.
+              <Link to="/destinations" className="font-medium text-brand-600 dark:text-brand-300">Destinations</Link> page.
             </p>
           </label>
           <div className="flex items-end">
@@ -388,7 +388,7 @@ export default function ProjectDetailPage() {
             icon={Archive}
             title="Latest backups"
             actions={
-              <Link to={`/backups?project_id=${project.id}`} className="text-sm font-medium text-brand-600">
+              <Link to={`/backups?project_id=${project.id}`} className="text-sm font-medium text-brand-600 dark:text-brand-300">
                 Open in backups
               </Link>
             }

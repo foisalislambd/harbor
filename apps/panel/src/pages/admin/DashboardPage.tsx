@@ -70,7 +70,7 @@ export default function DashboardPage() {
               icon={Archive}
               title="Recent backups"
               actions={
-                <Link to="/backups" className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700">
+                <Link to="/backups" className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-300 dark:hover:text-brand-200">
                   View all
                   <ArrowRight className="h-3.5 w-3.5" aria-hidden />
                 </Link>
