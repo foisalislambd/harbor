@@ -1,3 +1,4 @@
+import { CopyAgentButton } from "@/components/admin/ui/copy-agent-button";
 import { AdminPageHeader, AdminSectionTitle } from "@/components/admin/layout/admin-page-header";
 import { ProviderLogo } from "@/components/provider-logo";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
@@ -15,6 +16,8 @@ import {
   type Schedule,
   type Webhook,
 } from "@/lib/harbor-api";
+import { agentPrompt } from "@/lib/agent-prompt";
+import { useExampleOrigin } from "@/lib/example-origin";
 import { Archive, CalendarClock, Copy, KeyRound, Trash2, Webhook as WebhookIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -22,6 +25,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 export default function ProjectDetailPage() {
   const { projectId = "" } = useParams();
   const navigate = useNavigate();
+  const origin = useExampleOrigin();
   const [project, setProject] = useState<Project | null>(null);
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [hooks, setHooks] = useState<Webhook[]>([]);
@@ -135,6 +139,8 @@ export default function ProjectDetailPage() {
       <AdminPageHeader
         title={project.name}
         actions={
+          <>
+          <CopyAgentButton prompt={agentPrompt(origin, project.name)} />
           <button
             type="button"
             className={solidDangerButtonClass}
@@ -148,6 +154,7 @@ export default function ProjectDetailPage() {
             <Trash2 className="h-4 w-4" aria-hidden />
             Delete project
           </button>
+          </>
         }
       />
       {error && <p className="text-sm text-error-500">{error}</p>}

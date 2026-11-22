@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Harbor's logo is the sidebar, sign-in, and setup mark, the browser icon, and the README header. The original file is in `docs/brand`, with a trimmed transparent version for dark backgrounds.
-- The README includes a prompt you can paste into any AI agent. The API guide stays the short curl and CLI page and adds Copy for AI agent, which copies that prompt with this install's address filled in. The prompt does not contain the API key.
+- The README includes a prompt you can paste into any AI agent. The API guide stays the short curl and CLI page and adds Copy for AI agent, which copies that prompt with this install's address filled in. The prompt does not contain the API key. The same button is on a project page and names that project. The prompt tells the agent to add a backup command to the application open in the chat, keep the key in HARBOR_TOKEN, and document the command in that application's README.
 - Telegram destinations sign in as your account with an api_id and api_hash from my.telegram.org. The MTProto session is stored encrypted and is left out of API responses. A regular account uploads one document up to 2 GB, and a Premium account up to 4 GB. Larger backups are split. Retention deletes those messages.
 
 ### Fixed

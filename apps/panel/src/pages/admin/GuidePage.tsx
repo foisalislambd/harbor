@@ -1,33 +1,11 @@
+import { CopyAgentButton } from "@/components/admin/ui/copy-agent-button";
 import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { agentPrompt } from "@/lib/agent-prompt";
 import { useExampleOrigin } from "@/lib/example-origin";
-import { quietButtonClass } from "@/lib/fields";
-import { Check, Copy } from "lucide-react";
-import { useState } from "react";
-
-async function copyPrompt(value: string) {
-  try {
-    await navigator.clipboard.writeText(value);
-    return;
-  } catch {
-    const area = document.createElement("textarea");
-    area.value = value;
-    area.setAttribute("readonly", "");
-    area.style.position = "fixed";
-    area.style.opacity = "0";
-    document.body.appendChild(area);
-    area.focus();
-    area.select();
-    const ok = document.execCommand("copy");
-    area.remove();
-    if (!ok) throw new Error("copy failed");
-  }
-}
 
 export default function GuidePage() {
   const origin = useExampleOrigin();
   const prompt = agentPrompt(origin);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const curl = `curl -X POST ${origin}/api/v1/push \\
   -H "Authorization: Bearer hb_your_project_key" \\
   -F "file=@backup.tar.gz" \\
@@ -40,21 +18,7 @@ export default function GuidePage() {
     <div className="admin-content space-y-6">
       <AdminPageHeader
         title="API guide"
-        actions={
-          <button
-            type="button"
-            className={quietButtonClass}
-            onClick={() => {
-              void copyPrompt(prompt)
-                .then(() => setCopyState("copied"))
-                .catch(() => setCopyState("failed"))
-                .finally(() => window.setTimeout(() => setCopyState("idle"), 2000));
-            }}
-          >
-            {copyState === "copied" ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-            {copyState === "copied" ? "Copied" : copyState === "failed" ? "Could not copy" : "Copy for AI agent"}
-          </button>
-        }
+        actions={<CopyAgentButton prompt={prompt} />}
       />
       <div className="admin-card">
         <div className="admin-card-body space-y-4 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
