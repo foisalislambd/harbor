@@ -62,9 +62,9 @@ export default function GuidePage() {
             This is the same panel that opens when you run the Harbor desktop app. Create a project, then create an API key. Any application that can send an HTTP request can store a backup here. The key only sees that one project. Backups stay on this machine. On Destinations you can add object storage or a Telegram account, then choose it on a project to keep a second copy there too. Telegram signs in with your api_id and api_hash and uploads each backup as a document. The examples below use this panel's address.
           </p>
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">Push a file</h2>
-          <pre className="overflow-x-auto rounded-xl bg-gray-950 p-4 text-xs text-gray-100">{curl}</pre>
+          <pre className="admin-code">{curl}</pre>
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">Harbor CLI</h2>
-          <pre className="overflow-x-auto rounded-xl bg-gray-950 p-4 text-xs text-gray-100">{cli}</pre>
+          <pre className="admin-code">{cli}</pre>
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">Other calls with the same key</h2>
           <ul className="list-disc space-y-1 pl-5">
             <li>GET {origin}/api/v1/backups</li>

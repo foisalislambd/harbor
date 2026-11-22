@@ -28,6 +28,23 @@
   color: #98a2b3;
 }
 
+.admin-code {
+  overflow-x: auto;
+  border-radius: 0.75rem;
+  border: 1px solid #e4e7ec;
+  background-color: #f2f4f7;
+  padding: 1rem;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #101828;
+}
+
+.dark .admin-code {
+  border-color: #3a4860;
+  background-color: #121a27;
+  color: #f9fafb;
+}
+
 .admin-main {
   height: 100dvh;
   width: 100%;
