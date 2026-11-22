@@ -1181,12 +1181,12 @@ func (s *Store) Stats(ctx context.Context) (Stats, error) {
 			st.OverdueSchedules++
 		}
 	}
-	recent, _, err := s.ListBackups(ctx, BackupFilter{Limit: 8})
+	recent, _, err := s.ListBackups(ctx, BackupFilter{Limit: 5})
 	if err != nil {
 		return st, err
 	}
 	st.RecentBackups = recent
-	activity, _, err := s.ListAudit(ctx, 8, 0)
+	activity, _, err := s.ListAudit(ctx, 5, 0)
 	if err != nil {
 		return st, err
 	}

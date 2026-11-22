@@ -2,6 +2,7 @@ import { CopyAgentButton } from "@/components/admin/ui/copy-agent-button";
 import { AdminPageHeader, AdminSectionTitle } from "@/components/admin/layout/admin-page-header";
 import { ProviderLogo } from "@/components/provider-logo";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
+import { AdminPagination } from "@/components/admin/ui/admin-pagination";
 import { dangerButtonClass, fieldClass, labelClass, primaryButtonClass, quietButtonClass, solidDangerButtonClass } from "@/lib/fields";
 import {
   api,
@@ -18,6 +19,7 @@ import {
 } from "@/lib/harbor-api";
 import { agentPrompt } from "@/lib/agent-prompt";
 import { useExampleOrigin } from "@/lib/example-origin";
+import { SECTION_PAGE_SIZE, slicePage } from "@/lib/page-slice";
 import { Archive, CalendarClock, Copy, KeyRound, Trash2, Webhook as WebhookIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -31,6 +33,7 @@ export default function ProjectDetailPage() {
   const [hooks, setHooks] = useState<Webhook[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [backups, setBackups] = useState<Backup[]>([]);
+  const [backupTotal, setBackupTotal] = useState(0);
   const [freshToken, setFreshToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [keyName, setKeyName] = useState("production");
@@ -38,6 +41,10 @@ export default function ProjectDetailPage() {
   const [hookUrl, setHookUrl] = useState("");
   const [scheduleName, setScheduleName] = useState("nightly");
   const [intervalHours, setIntervalHours] = useState(24);
+  const [keyPage, setKeyPage] = useState(1);
+  const [schedulePage, setSchedulePage] = useState(1);
+  const [hookPage, setHookPage] = useState(1);
+  const [backupPage, setBackupPage] = useState(1);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [savedDestination, setSavedDestination] = useState("");
   const [copying, setCopying] = useState(false);
@@ -49,7 +56,7 @@ export default function ProjectDetailPage() {
       api<{ items: ApiKey[] }>(`/api/v1/projects/${projectId}/keys`),
       api<{ items: Webhook[] }>(`/api/v1/projects/${projectId}/webhooks`),
       api<{ items: Schedule[] }>(`/api/v1/projects/${projectId}/schedules`),
-      api<{ items: Backup[] }>(`/api/v1/backups?project_id=${projectId}&limit=8`),
+      api<{ items: Backup[]; total: number }>(`/api/v1/backups?project_id=${projectId}&limit=${SECTION_PAGE_SIZE}&offset=${(backupPage - 1) * SECTION_PAGE_SIZE}`),
       api<DestinationList>("/api/v1/destinations"),
     ]);
     setProject(projectRes);
@@ -58,6 +65,7 @@ export default function ProjectDetailPage() {
     setHooks(hookRes.items);
     setSchedules(scheduleRes.items);
     setBackups(backupRes.items);
+    setBackupTotal(backupRes.total);
     setDestinations(destinationRes.items);
   }
 
@@ -68,7 +76,7 @@ export default function ProjectDetailPage() {
       api<{ items: ApiKey[] }>(`/api/v1/projects/${projectId}/keys`),
       api<{ items: Webhook[] }>(`/api/v1/projects/${projectId}/webhooks`),
       api<{ items: Schedule[] }>(`/api/v1/projects/${projectId}/schedules`),
-      api<{ items: Backup[] }>(`/api/v1/backups?project_id=${projectId}&limit=8`),
+      api<{ items: Backup[]; total: number }>(`/api/v1/backups?project_id=${projectId}&limit=${SECTION_PAGE_SIZE}&offset=${(backupPage - 1) * SECTION_PAGE_SIZE}`),
       api<DestinationList>("/api/v1/destinations"),
     ])
       .then(([projectRes, keyRes, hookRes, scheduleRes, backupRes, destinationRes]) => {
@@ -79,6 +87,7 @@ export default function ProjectDetailPage() {
         setHooks(hookRes.items);
         setSchedules(scheduleRes.items);
         setBackups(backupRes.items);
+        setBackupTotal(backupRes.total);
         setDestinations(destinationRes.items);
       })
       .catch((err: unknown) => {
@@ -87,7 +96,7 @@ export default function ProjectDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, backupPage]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -288,7 +297,7 @@ export default function ProjectDetailPage() {
             <button className={`${primaryButtonClass} shrink-0`} type="submit">Create key</button>
           </form>
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-            {keys.map((key) => (
+            {slicePage(keys, keyPage, SECTION_PAGE_SIZE).rows.map((key) => (
               <li key={key.id} className="flex items-center justify-between gap-3 py-3 text-sm">
                 <div>
                   <p className="font-medium text-gray-900 dark:text-white">{key.name}</p>
@@ -306,6 +315,13 @@ export default function ProjectDetailPage() {
               </li>
             ))}
           </ul>
+          <AdminPagination
+            page={slicePage(keys, keyPage, SECTION_PAGE_SIZE).page}
+            pageCount={slicePage(keys, keyPage, SECTION_PAGE_SIZE).pageCount}
+            total={keys.length}
+            pageSize={SECTION_PAGE_SIZE}
+            onPageChange={setKeyPage}
+          />
         </div>
       </section>
 
@@ -328,7 +344,7 @@ export default function ProjectDetailPage() {
               <button className={quietButtonClass} type="submit">Add schedule</button>
             </form>
             <ul className="space-y-2 text-sm">
-              {schedules.map((schedule) => (
+              {slicePage(schedules, schedulePage, SECTION_PAGE_SIZE).rows.map((schedule) => (
                 <li key={schedule.id} className="flex items-center justify-between gap-2">
                   <span>
                     {schedule.name} · every {schedule.interval_hours}h · {schedule.overdue ? "overdue" : "on time"}
@@ -339,6 +355,13 @@ export default function ProjectDetailPage() {
                 </li>
               ))}
             </ul>
+            <AdminPagination
+              page={slicePage(schedules, schedulePage, SECTION_PAGE_SIZE).page}
+              pageCount={slicePage(schedules, schedulePage, SECTION_PAGE_SIZE).pageCount}
+              total={schedules.length}
+              pageSize={SECTION_PAGE_SIZE}
+              onPageChange={setSchedulePage}
+            />
           </div>
         </section>
         <section className="admin-card">
@@ -367,7 +390,7 @@ export default function ProjectDetailPage() {
               <button className={quietButtonClass} type="submit">Add webhook</button>
             </form>
             <ul className="space-y-3 text-sm">
-              {hooks.map((hook) => (
+              {slicePage(hooks, hookPage, SECTION_PAGE_SIZE).rows.map((hook) => (
                 <li key={hook.id} className="space-y-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate">{hook.url}</span>
@@ -378,6 +401,13 @@ export default function ProjectDetailPage() {
                 </li>
               ))}
             </ul>
+            <AdminPagination
+              page={slicePage(hooks, hookPage, SECTION_PAGE_SIZE).page}
+              pageCount={slicePage(hooks, hookPage, SECTION_PAGE_SIZE).pageCount}
+              total={hooks.length}
+              pageSize={SECTION_PAGE_SIZE}
+              onPageChange={setHookPage}
+            />
           </div>
         </section>
       </div>
@@ -402,6 +432,13 @@ export default function ProjectDetailPage() {
             ))}
             {backups.length === 0 && <li className="py-2 text-gray-500">Nothing stored for this project yet.</li>}
           </ul>
+          <AdminPagination
+            page={backupPage}
+            pageCount={Math.max(1, Math.ceil(backupTotal / SECTION_PAGE_SIZE))}
+            total={backupTotal}
+            pageSize={SECTION_PAGE_SIZE}
+            onPageChange={setBackupPage}
+          />
         </div>
       </section>
     </div>

@@ -30,11 +30,12 @@ export function AdminPagination({
   pageSize = ADMIN_PAGE_SIZE,
   onPageChange,
 }: AdminPaginationProps) {
-  if (total === 0) return null;
+  const pageCountSafe = Math.max(1, pageCount);
+  if (total === 0 || total <= pageSize || pageCountSafe <= 1) return null;
 
   const start = (page - 1) * pageSize + 1;
   const end = Math.min(page * pageSize, total);
-  const items = pageWindow(page, pageCount);
+  const items = pageWindow(page, pageCountSafe);
   const button =
     "inline-flex h-9 min-w-9 items-center justify-center rounded-lg px-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40";
   const idle =
@@ -84,7 +85,7 @@ export function AdminPagination({
         <button
           type="button"
           className={`${button} ${idle}`}
-          disabled={page >= pageCount}
+          disabled={page >= pageCountSafe}
           onClick={() => onPageChange(page + 1)}
           aria-label="Next page"
         >

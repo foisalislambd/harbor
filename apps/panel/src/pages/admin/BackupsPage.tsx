@@ -1,13 +1,15 @@
 import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
+import { AdminPagination } from "@/components/admin/ui/admin-pagination";
 import { dangerButtonClass, fieldClass, labelClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
 import { api, downloadBackup, formatBytes, formatWhen, type Backup, type Project } from "@/lib/harbor-api";
+import { ADMIN_PAGE_SIZE } from "@/lib/page-slice";
 import { Archive, Download, FileUp, Search, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-const pageSize = 50;
+const pageSize = ADMIN_PAGE_SIZE;
 
 function copyLabel(backup: Backup) {
   if (!backup.copies?.length) return "This machine";
@@ -282,37 +284,18 @@ export default function BackupsPage() {
               ))}
             </tbody>
           </table>
-          <div className="flex items-center justify-between px-4 py-3 text-xs text-gray-500">
-            <span>{total} total</span>
-            {total > pageSize && (
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className={quietButtonClass}
-                  disabled={page <= 1}
-                  onClick={() => {
-                    const next = new URLSearchParams(params);
-                    next.set("page", String(page - 1));
-                    setParams(next);
-                  }}
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  className={quietButtonClass}
-                  disabled={page * pageSize >= total}
-                  onClick={() => {
-                    const next = new URLSearchParams(params);
-                    next.set("page", String(page + 1));
-                    setParams(next);
-                  }}
-                >
-                  Next
-                </button>
-              </div>
-            )}
-          </div>
+          <AdminPagination
+            page={page}
+            pageCount={Math.max(1, Math.ceil(total / pageSize))}
+            total={total}
+            pageSize={pageSize}
+            onPageChange={(nextPage) => {
+              const next = new URLSearchParams(params);
+              if (nextPage <= 1) next.delete("page");
+              else next.set("page", String(nextPage));
+              setParams(next);
+            }}
+          />
         </div>
       )}
     </div>

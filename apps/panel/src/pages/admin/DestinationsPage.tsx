@@ -2,9 +2,11 @@ import { useAdminAuth } from "@/components/admin/auth/admin-auth-provider";
 import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
+import { AdminPagination } from "@/components/admin/ui/admin-pagination";
 import { ProviderLogo } from "@/components/provider-logo";
 import { dangerButtonClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
 import { api, formatBytes, type Destination, type DestinationList } from "@/lib/harbor-api";
+import { slicePage } from "@/lib/page-slice";
 import { Cloud, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -41,6 +43,7 @@ export default function DestinationsPage() {
   const [checks, setChecks] = useState<Record<string, Check>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState<Destination | null>(null);
+  const [page, setPage] = useState(1);
   const [appliedFlash, setAppliedFlash] = useState(flash);
   if (flash !== appliedFlash) {
     setAppliedFlash(flash);
@@ -68,6 +71,9 @@ export default function DestinationsPage() {
 
   if (!items && !error) return <AdminLoading message="Loading destinations…" />;
 
+  const pageSize = 6;
+  const paged = slicePage(items ?? [], page, pageSize);
+
   return (
     <div className="admin-content space-y-6">
       <AdminPageHeader
@@ -88,8 +94,9 @@ export default function DestinationsPage() {
           <AdminEmptyState icon={Cloud} title="No destinations yet" />
         </div>
       ) : (
+        <div className="space-y-4">
         <div className="grid gap-4 lg:grid-cols-2">
-          {items?.map((destination) => {
+          {paged.rows.map((destination) => {
             const check = checks[destination.id];
             const status = statusOf(destination, check);
             const needsSignIn = destination.provider === "telegram" && !destination.signed_in;
@@ -170,6 +177,18 @@ export default function DestinationsPage() {
               </article>
             );
           })}
+        </div>
+        {paged.pageCount > 1 && (
+          <div className="admin-card">
+            <AdminPagination
+              page={paged.page}
+              pageCount={paged.pageCount}
+              total={items?.length ?? 0}
+              pageSize={pageSize}
+              onPageChange={setPage}
+            />
+          </div>
+        )}
         </div>
       )}
       {signingIn && (

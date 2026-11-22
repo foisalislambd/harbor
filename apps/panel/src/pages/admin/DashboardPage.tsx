@@ -80,7 +80,7 @@ export default function DashboardPage() {
               <AdminEmptyState icon={Archive} title="No backups yet" />
             ) : (
               <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-                {stats.recent_backups.map((backup) => (
+                {stats.recent_backups.slice(0, 5).map((backup) => (
                   <li key={backup.id} className="flex items-center gap-3 py-3">
                     <span className="admin-icon-well">
                       <Archive className="h-4 w-4" aria-hidden />
@@ -100,10 +100,19 @@ export default function DashboardPage() {
         </section>
         <section className="admin-card xl:col-span-2">
           <div className="admin-card-body">
-            <AdminSectionTitle icon={Activity} title="Activity" />
+            <AdminSectionTitle
+              icon={Activity}
+              title="Activity"
+              actions={
+                <Link to="/activity" className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-300 dark:hover:text-brand-200">
+                  View all
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </Link>
+              }
+            />
             {stats.recent_activity.length === 0 ? null : (
               <ul className="mt-3 space-y-3">
-                {stats.recent_activity.map((event) => (
+                {stats.recent_activity.slice(0, 5).map((event) => (
                   <li key={event.id} className="flex items-start gap-2.5">
                     <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" aria-hidden />
                     <div className="min-w-0">

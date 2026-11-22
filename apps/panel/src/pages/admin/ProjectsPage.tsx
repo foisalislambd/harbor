@@ -2,8 +2,10 @@ import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminAddButton } from "@/components/admin/ui/admin-add-button";
 import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
+import { AdminPagination } from "@/components/admin/ui/admin-pagination";
 import { fieldClass, labelClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
 import { api, formatBytes, type Project } from "@/lib/harbor-api";
+import { CARD_PAGE_SIZE, slicePage } from "@/lib/page-slice";
 import { FolderKanban, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -22,6 +24,7 @@ export default function ProjectsPage() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [page, setPage] = useState(1);
 
   async function load() {
     const res = await api<{ items: Project[] }>("/api/v1/projects");
@@ -59,6 +62,7 @@ export default function ProjectsPage() {
       });
       setOpen(false);
       setForm(emptyForm);
+      setPage(1);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create project");
@@ -68,6 +72,8 @@ export default function ProjectsPage() {
   }
 
   if (!projects && !error) return <AdminLoading message="Loading projects…" />;
+
+  const paged = slicePage(projects ?? [], page, CARD_PAGE_SIZE);
 
   return (
     <div className="admin-content space-y-6">
@@ -85,8 +91,9 @@ export default function ProjectsPage() {
           />
         </div>
       ) : (
+        <div className="space-y-4">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {projects?.map((project) => (
+          {paged.rows.map((project) => (
             <Link key={project.id} to={`/projects/${project.id}`} className="admin-card transition hover:border-brand-300 hover:shadow-sm">
               <div className="flex items-center gap-3 px-4 py-3">
                 <span className="admin-icon-well">
@@ -112,6 +119,18 @@ export default function ProjectsPage() {
               </div>
             </Link>
           ))}
+        </div>
+        {paged.pageCount > 1 && (
+          <div className="admin-card">
+            <AdminPagination
+              page={paged.page}
+              pageCount={paged.pageCount}
+              total={projects?.length ?? 0}
+              pageSize={CARD_PAGE_SIZE}
+              onPageChange={setPage}
+            />
+          </div>
+        )}
         </div>
       )}
 

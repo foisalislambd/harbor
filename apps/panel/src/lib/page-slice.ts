@@ -1,4 +1,6 @@
-export const ADMIN_PAGE_SIZE = 5;
+export const ADMIN_PAGE_SIZE = 10;
+export const CARD_PAGE_SIZE = 9;
+export const SECTION_PAGE_SIZE = 5;
 
 export function slicePage<T>(items: T[], page: number, pageSize = ADMIN_PAGE_SIZE) {
   const total = items.length;

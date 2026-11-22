@@ -1,7 +1,9 @@
 import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
+import { AdminPagination } from "@/components/admin/ui/admin-pagination";
 import { api, formatWhen, type AuditEvent } from "@/lib/harbor-api";
+import { ADMIN_PAGE_SIZE } from "@/lib/page-slice";
 import { Activity, Archive, FolderPlus, KeyRound, Server, UserRound, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -27,13 +29,25 @@ function actorLabel(actor: string) {
 
 export default function ActivityPage() {
   const [items, setItems] = useState<AuditEvent[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<{ items: AuditEvent[] }>("/api/v1/audit?limit=100")
-      .then((res) => setItems(res.items))
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not load activity"));
-  }, []);
+    let cancelled = false;
+    api<{ items: AuditEvent[]; total: number }>(`/api/v1/audit?limit=${ADMIN_PAGE_SIZE}&offset=${(page - 1) * ADMIN_PAGE_SIZE}`)
+      .then((res) => {
+        if (cancelled) return;
+        setItems(res.items);
+        setTotal(res.total);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Could not load activity");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [page]);
 
   if (error) return <p className="text-sm text-error-500">{error}</p>;
   if (!items) return <AdminLoading message="Loading activity…" />;
@@ -86,6 +100,13 @@ export default function ActivityPage() {
               })}
             </tbody>
           </table>
+          <AdminPagination
+            page={page}
+            pageCount={Math.max(1, Math.ceil(total / ADMIN_PAGE_SIZE))}
+            total={total}
+            pageSize={ADMIN_PAGE_SIZE}
+            onPageChange={setPage}
+          />
         </div>
       )}
     </div>

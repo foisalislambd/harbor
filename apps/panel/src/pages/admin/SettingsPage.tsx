@@ -1,8 +1,10 @@
 import { AdminPageHeader, AdminSectionTitle } from "@/components/admin/layout/admin-page-header";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
+import { AdminPagination } from "@/components/admin/ui/admin-pagination";
 import { useAdminAuth } from "@/components/admin/auth/admin-auth-provider";
 import { dangerButtonClass, fieldClass, labelClass, primaryButtonClass } from "@/lib/fields";
 import { api, formatBytes, type SessionUser, type Settings } from "@/lib/harbor-api";
+import { SECTION_PAGE_SIZE, slicePage } from "@/lib/page-slice";
 import { KeyRound, Server, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -18,6 +20,7 @@ export default function SettingsPage() {
   const [nextPassword, setNextPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [userPage, setUserPage] = useState(1);
 
   async function load() {
     const [settingsRes, usersRes] = await Promise.all([
@@ -140,7 +143,7 @@ export default function SettingsPage() {
           </form>
           )}
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
-            {users.map((user) => (
+            {slicePage(users, userPage, SECTION_PAGE_SIZE).rows.map((user) => (
               <li key={user.id} className="flex items-center justify-between py-3 text-sm">
                 <span>
                   <span className="font-medium text-gray-900 dark:text-white">{user.name}</span>
@@ -163,6 +166,13 @@ export default function SettingsPage() {
               </li>
             ))}
           </ul>
+          <AdminPagination
+            page={slicePage(users, userPage, SECTION_PAGE_SIZE).page}
+            pageCount={slicePage(users, userPage, SECTION_PAGE_SIZE).pageCount}
+            total={users.length}
+            pageSize={SECTION_PAGE_SIZE}
+            onPageChange={setUserPage}
+          />
         </div>
       </section>
     </div>
