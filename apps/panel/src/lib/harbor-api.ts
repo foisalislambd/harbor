@@ -75,6 +75,7 @@ export type StorageProvider = {
   endpoint: boolean;
   endpoint_placeholder: string;
   allow_http: boolean;
+  telegram?: boolean;
 };
 
 export type StorageProviderList = {
@@ -94,6 +95,8 @@ export type Destination = {
   endpoint: string;
   allow_over_free: boolean;
   key_prefix: string;
+  signed_in?: boolean;
+  account_label?: string;
   used_bytes: number;
   account_used_bytes: number;
   free_storage_bytes: number;
@@ -170,6 +173,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  headers.set("X-Harbor-Request", "1");
   const res = await fetch(path, { ...init, headers, credentials: "include" });
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -178,14 +182,49 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     try {
       data = JSON.parse(text) as { error?: string };
     } catch {
-      data = { error: text.slice(0, 200) };
+      data = {};
     }
   }
   if (!res.ok) {
-    throw new ApiError(res.status, data.error || res.statusText);
+    throw new ApiError(res.status, messageFromFailedResponse(res.status, text));
   }
   return data as T;
 }
+
+export function messageFromFailedResponse(status: number, body: string): string {
+  const text = body.trim();
+  if (text) {
+    try {
+      const data = JSON.parse(text) as { error?: unknown };
+      if (typeof data.error === "string" && data.error.trim()) return data.error.trim();
+    } catch {
+      // A proxy error page is HTML or plain text, not Harbor's JSON.
+    }
+  }
+  if (status === 524) return "Proxy returned 524 timeout";
+  if (status === 504) return "Proxy returned 504 gateway timeout";
+  if (status === 502) return "Proxy returned 502 bad gateway";
+  if (status === 522) return "Proxy returned 522 connection timed out";
+  if (status >= 500) return `Proxy returned ${status}`;
+  if (status === 404) return "That could not be found. Refresh the page and try again.";
+  return "Something went wrong. Try again.";
+}
+
+export type TelegramQR = {
+  status: "qr" | "password" | "ok";
+  url?: string;
+  expires?: number;
+  expires_in?: number;
+  image?: string;
+  account_label?: string;
+  message?: string;
+};
+
+export type TelegramCode = {
+  type: string;
+  url?: string;
+  message: string;
+};
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";

@@ -6,12 +6,14 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"harbor/internal/id"
+	"harbor/internal/secretbox"
 
 	_ "modernc.org/sqlite"
 )
@@ -29,6 +31,7 @@ var (
 type Store struct {
 	db    *sql.DB
 	blobs string
+	box   *secretbox.Box
 }
 
 type User struct {
@@ -58,7 +61,10 @@ type Project struct {
 	UpdatedAt       string `json:"updated_at"`
 }
 
-const ProviderCloudflareR2 = "cloudflare_r2"
+const (
+	ProviderCloudflareR2 = "cloudflare_r2"
+	ProviderTelegram     = "telegram"
+)
 
 type Destination struct {
 	ID            string `json:"id"`
@@ -133,7 +139,7 @@ type Webhook struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"project_id"`
 	URL       string `json:"url"`
-	Secret    string `json:"secret"`
+	Secret    string `json:"secret,omitempty"`
 	Events    string `json:"events"`
 	CreatedAt string `json:"created_at"`
 }
@@ -175,18 +181,21 @@ type Stats struct {
 }
 
 func Open(dataDir string) (*Store, error) {
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+	tightenProcessUmask()
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(dataDir, 0o700); err != nil {
 		return nil, err
 	}
 	blobRoot := filepath.Join(dataDir, "blobs")
-	if err := os.MkdirAll(blobRoot, 0o755); err != nil {
+	if err := os.MkdirAll(blobRoot, 0o700); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Join(dataDir, "tmp"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dataDir, "tmp"), 0o700); err != nil {
 		return nil, err
 	}
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)", filepath.Join(dataDir, "harbor.db"))
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open("sqlite", sqliteDSN(filepath.Join(dataDir, "harbor.db")))
 	if err != nil {
 		return nil, err
 	}
@@ -201,8 +210,86 @@ func Open(dataDir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Store{db: db, blobs: blobRoot}
+	_ = os.Chmod(filepath.Join(dataDir, "harbor.db"), 0o600)
+	box, err := secretbox.Load(dataDir)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	s := &Store{db: db, blobs: blobRoot, box: box}
+	if err := s.migrateSecrets(context.Background()); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return s, nil
+}
+
+func sqliteDSN(path string) string {
+	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"}
+	return u.String()
+}
+
+func (s *Store) migrateSecrets(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, secret_access_key FROM destinations`)
+	if err != nil {
+		return err
+	}
+	type pair struct{ id, secret string }
+	var pending []pair
+	for rows.Next() {
+		var item pair
+		if err := rows.Scan(&item.id, &item.secret); err != nil {
+			rows.Close()
+			return err
+		}
+		if item.secret != "" && !secretbox.Sealed(item.secret) {
+			pending = append(pending, item)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, item := range pending {
+		sealed, err := s.box.Seal(item.secret)
+		if err != nil {
+			return err
+		}
+		if _, err := s.db.ExecContext(ctx, `UPDATE destinations SET secret_access_key = ? WHERE id = ?`, sealed, item.id); err != nil {
+			return err
+		}
+	}
+	rows, err = s.db.QueryContext(ctx, `SELECT id, secret FROM webhooks`)
+	if err != nil {
+		return err
+	}
+	pending = nil
+	for rows.Next() {
+		var item pair
+		if err := rows.Scan(&item.id, &item.secret); err != nil {
+			rows.Close()
+			return err
+		}
+		if item.secret != "" && !secretbox.Sealed(item.secret) {
+			pending = append(pending, item)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, item := range pending {
+		sealed, err := s.box.Seal(item.secret)
+		if err != nil {
+			return err
+		}
+		if _, err := s.db.ExecContext(ctx, `UPDATE webhooks SET secret = ? WHERE id = ?`, sealed, item.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func migrate(db *sql.DB) error {
@@ -395,6 +482,13 @@ func (s *Store) UserBySession(ctx context.Context, raw string) (User, error) {
 
 func (s *Store) DeleteSession(ctx context.Context, raw string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = ?`, id.HashToken(raw))
+	return err
+}
+
+// DeleteOtherSessions drops every session for the user except the one presented
+// as keepRaw. Password changes use this so a stolen cookie stops working.
+func (s *Store) DeleteOtherSessions(ctx context.Context, userID, keepRaw string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ? AND token_hash != ?`, userID, id.HashToken(keepRaw))
 	return err
 }
 
@@ -651,7 +745,7 @@ func (s *Store) CreateBackup(ctx context.Context, b Backup) (Backup, error) {
 		if existing > 0 {
 			extra = 0
 		}
-		if used+extra > quota {
+		if extra > 0 && (used > quota || extra > quota-used) {
 			return Backup{}, ErrQuota
 		}
 	}
@@ -864,7 +958,17 @@ func (s *Store) EnforceAllRetention(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	return s.PruneAudit(ctx, 10000)
+}
+
+func (s *Store) PruneAudit(ctx context.Context, keep int) error {
+	if keep < 1 {
+		keep = 1
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM audit_logs WHERE id NOT IN (
+		SELECT id FROM audit_logs ORDER BY created_at DESC, id DESC LIMIT ?
+	)`, keep)
+	return err
 }
 
 func (s *Store) GCOrphanBlobs(ctx context.Context) error {
@@ -889,9 +993,13 @@ func (s *Store) CreateWebhook(ctx context.Context, projectID, url, events string
 	if err != nil {
 		return Webhook{}, err
 	}
+	sealed, err := s.box.Seal(secret)
+	if err != nil {
+		return Webhook{}, err
+	}
 	w := Webhook{ID: id.New("wh_"), ProjectID: projectID, URL: strings.TrimSpace(url), Secret: secret, Events: events, CreatedAt: Now()}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO webhooks (id, project_id, url, secret, events, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		w.ID, w.ProjectID, w.URL, w.Secret, w.Events, w.CreatedAt)
+		w.ID, w.ProjectID, w.URL, sealed, w.Events, w.CreatedAt)
 	return w, err
 }
 
@@ -907,6 +1015,11 @@ func (s *Store) ListWebhooks(ctx context.Context, projectID string) ([]Webhook, 
 		if err := rows.Scan(&w.ID, &w.ProjectID, &w.URL, &w.Secret, &w.Events, &w.CreatedAt); err != nil {
 			return nil, err
 		}
+		plain, err := s.box.Open(w.Secret)
+		if err != nil {
+			return nil, err
+		}
+		w.Secret = plain
 		out = append(out, w)
 	}
 	return out, rows.Err()
@@ -1191,13 +1304,57 @@ func (s *Store) CreateDestination(ctx context.Context, d Destination) (Destinati
 	if d.AllowOverFree {
 		over = 1
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO destinations (id, name, provider, account_id, access_key_id, secret_access_key, bucket, jurisdiction, region, endpoint, allow_over_free, key_prefix, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		d.ID, d.Name, d.Provider, d.AccountID, d.AccessKeyID, d.Secret, d.Bucket, d.Jurisdiction, d.Region, d.Endpoint, over, d.KeyPrefix, d.CreatedAt, d.UpdatedAt)
+	sealed, err := s.box.Seal(d.Secret)
+	if err != nil {
+		return Destination{}, err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO destinations (id, name, provider, account_id, access_key_id, secret_access_key, bucket, jurisdiction, region, endpoint, allow_over_free, key_prefix, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.Name, d.Provider, d.AccountID, d.AccessKeyID, sealed, d.Bucket, d.Jurisdiction, d.Region, d.Endpoint, over, d.KeyPrefix, d.CreatedAt, d.UpdatedAt)
 	if err != nil {
 		return Destination{}, err
 	}
 	d.Secret = ""
 	return s.GetDestination(ctx, d.ID)
+}
+
+// UpdateDestination replaces the saved fields. Secret must already be the plaintext to seal.
+func (s *Store) UpdateDestination(ctx context.Context, d Destination) (Destination, error) {
+	d.UpdatedAt = Now()
+	over := 0
+	if d.AllowOverFree {
+		over = 1
+	}
+	sealed, err := s.box.Seal(d.Secret)
+	if err != nil {
+		return Destination{}, err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE destinations SET name = ?, account_id = ?, access_key_id = ?, secret_access_key = ?, bucket = ?, jurisdiction = ?, region = ?, endpoint = ?, allow_over_free = ?, key_prefix = ?, updated_at = ? WHERE id = ?`,
+		d.Name, d.AccountID, d.AccessKeyID, sealed, d.Bucket, d.Jurisdiction, d.Region, d.Endpoint, over, d.KeyPrefix, d.UpdatedAt, d.ID)
+	if err != nil {
+		return Destination{}, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return Destination{}, ErrNotFound
+	}
+	return s.GetDestination(ctx, d.ID)
+}
+
+// UpdateDestinationSecret replaces the sealed credential for one destination.
+func (s *Store) UpdateDestinationSecret(ctx context.Context, destinationID, secret string) error {
+	sealed, err := s.box.Seal(secret)
+	if err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE destinations SET secret_access_key = ?, updated_at = ? WHERE id = ?`, sealed, Now(), destinationID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) ListDestinations(ctx context.Context) ([]Destination, error) {
@@ -1248,6 +1405,11 @@ func (s *Store) GetDestination(ctx context.Context, destinationID string) (Desti
 	if err != nil {
 		return Destination{}, err
 	}
+	plain, err := s.box.Open(d.Secret)
+	if err != nil {
+		return Destination{}, err
+	}
+	d.Secret = plain
 	d.UsedBytes, err = s.DestinationUsage(ctx, d.ID)
 	return d, err
 }

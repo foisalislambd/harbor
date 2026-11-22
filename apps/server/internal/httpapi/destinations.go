@@ -11,6 +11,7 @@ import (
 	"harbor/internal/providers"
 	"harbor/internal/replicate"
 	"harbor/internal/store"
+	"harbor/internal/telegram"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -23,7 +24,15 @@ func (a *API) listDestinations(w http.ResponseWriter, r *http.Request) {
 	}
 	views := make([]destinationView, 0, len(items))
 	for _, item := range items {
-		view := withFree(item)
+		view := decorateDestination(item)
+		if item.Provider == store.ProviderTelegram {
+			full, err := a.store.GetDestination(r.Context(), item.ID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "could not list destinations")
+				return
+			}
+			view.SignedIn, view.AccountLabel = telegram.PublicStatus(full.Secret)
+		}
 		scope := item.AccountID
 		if scope == "" {
 			scope = item.AccessKeyID
@@ -44,9 +53,11 @@ func (a *API) listProviders(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
+	if !requireOwner(w, r) {
+		return
+	}
 	var body destinationBody
-	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !readJSON(w, r, &body) {
 		return
 	}
 	dest, err := normalizeDestination(body, true)
@@ -54,9 +65,11 @@ func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := checkDestination(r.Context(), dest); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+	if dest.Provider != store.ProviderTelegram {
+		if _, err := checkDestination(r.Context(), dest); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	created, err := a.store.CreateDestination(r.Context(), dest)
 	if err != nil {
@@ -65,10 +78,82 @@ func (a *API) createDestination(w http.ResponseWriter, r *http.Request) {
 	}
 	actor := principalFrom(r)
 	a.store.AddAudit(r.Context(), actor.Actor(), "destination.created", created.ID, created.Name)
-	writeJSON(w, http.StatusCreated, withFree(created))
+	writeJSON(w, http.StatusCreated, decorateDestination(created))
+}
+
+func (a *API) getDestination(w http.ResponseWriter, r *http.Request) {
+	dest, err := a.store.GetDestination(r.Context(), chi.URLParam(r, "destinationID"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "destination not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load destination")
+		return
+	}
+	writeJSON(w, http.StatusOK, decorateDestination(dest))
+}
+
+func (a *API) updateDestination(w http.ResponseWriter, r *http.Request) {
+	if !requireOwner(w, r) {
+		return
+	}
+	current, err := a.store.GetDestination(r.Context(), chi.URLParam(r, "destinationID"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "destination not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load destination")
+		return
+	}
+	var body destinationBody
+	if !readJSON(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Provider) == "" {
+		body.Provider = current.Provider
+	}
+	if body.Provider != current.Provider {
+		writeError(w, http.StatusBadRequest, "the storage service cannot be changed")
+		return
+	}
+	if strings.TrimSpace(body.SecretAccessKey) == "" {
+		body.SecretAccessKey = current.Secret
+	}
+	dest, err := normalizeDestination(body, false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if dest.Provider == store.ProviderTelegram && (dest.AccessKeyID != current.AccessKeyID || dest.AccountID != current.AccountID) {
+		plain, err := telegram.WithoutSession(dest.Secret)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		dest.Secret = plain
+	}
+	if dest.Provider != store.ProviderTelegram {
+		if _, err := checkDestination(r.Context(), dest); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	dest.ID = current.ID
+	updated, err := a.store.UpdateDestination(r.Context(), dest)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not save destination")
+		return
+	}
+	a.store.AddAudit(r.Context(), principalFrom(r).Actor(), "destination.updated", updated.ID, updated.Name)
+	writeJSON(w, http.StatusOK, decorateDestination(updated))
 }
 
 func (a *API) deleteDestination(w http.ResponseWriter, r *http.Request) {
+	if !requireOwner(w, r) {
+		return
+	}
 	id := chi.URLParam(r, "destinationID")
 	current, err := a.store.GetDestination(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
@@ -89,6 +174,9 @@ func (a *API) deleteDestination(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) testDestination(w http.ResponseWriter, r *http.Request) {
+	if !requireOwner(w, r) {
+		return
+	}
 	dest, err := a.store.GetDestination(r.Context(), chi.URLParam(r, "destinationID"))
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "destination not found")
@@ -98,7 +186,17 @@ func (a *API) testDestination(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "could not load destination")
 		return
 	}
-	if err := checkDestination(r.Context(), dest); err != nil {
+	ctx := r.Context()
+	if dest.Provider == store.ProviderTelegram {
+		var cancel context.CancelFunc
+		ctx, cancel = telegramContext(r)
+		defer cancel()
+	}
+	if _, err := checkDestination(ctx, dest); err != nil {
+		if dest.Provider == store.ProviderTelegram {
+			writeTelegramError(w, err)
+			return
+		}
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -165,6 +263,19 @@ type destinationView struct {
 	ProviderName     string `json:"provider_name"`
 	FreeStorageBytes int64  `json:"free_storage_bytes"`
 	AccountUsedBytes int64  `json:"account_used_bytes"`
+	SignedIn         bool   `json:"signed_in"`
+	AccountLabel     string `json:"account_label,omitempty"`
+}
+
+func decorateDestination(d store.Destination) destinationView {
+	signed, label := false, ""
+	if d.Provider == store.ProviderTelegram {
+		signed, label = telegram.PublicStatus(d.Secret)
+	}
+	view := withFree(d)
+	view.SignedIn = signed
+	view.AccountLabel = label
+	return view
 }
 
 func withFree(d store.Destination) destinationView {
@@ -180,6 +291,20 @@ func normalizeDestination(body destinationBody, creating bool) (store.Destinatio
 	name := strings.TrimSpace(body.Name)
 	if name == "" || len(name) > 80 {
 		return store.Destination{}, errors.New("destination name is required")
+	}
+	if body.Provider == store.ProviderTelegram {
+		secret := strings.TrimSpace(body.SecretAccessKey)
+		access := strings.TrimSpace(body.AccessKeyID)
+		if creating && !validSecret(secret) {
+			return store.Destination{}, errors.New("api hash is required")
+		}
+		if !validAccess(access) {
+			return store.Destination{}, errors.New("api id is required")
+		}
+		return providers.Prepare(store.Destination{
+			Name: name, Provider: body.Provider, AccountID: body.AccountID,
+			AccessKeyID: access, Secret: secret, Region: body.Region, Endpoint: body.Endpoint,
+		})
 	}
 	access := strings.TrimSpace(body.AccessKeyID)
 	if !validAccess(access) {
@@ -279,12 +404,15 @@ func validPrefix(prefix string) bool {
 	return !strings.HasPrefix(prefix, "/") && !strings.HasSuffix(prefix, "/")
 }
 
-func checkDestination(ctx context.Context, dest store.Destination) error {
-	client, err := providers.Open(dest)
+func checkDestination(ctx context.Context, dest store.Destination) (interface{ Check(context.Context) error }, error) {
+	client, err := providers.Connect(dest)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	return client.Check(ctx)
+	if err := client.Check(ctx); err != nil {
+		return nil, err
+	}
+	return client, nil
 }

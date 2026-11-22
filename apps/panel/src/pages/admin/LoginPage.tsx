@@ -1,4 +1,5 @@
 import { AdminLoginForm } from "@/components/admin/auth/admin-login-form";
+import { BrandMark } from "@/components/brand-mark";
 import { AdminThemeToggle } from "@/components/admin/ui/admin-theme-toggle";
 import { adminConfig } from "@/config/admin.config";
 
@@ -16,9 +17,7 @@ function BrandPanel({ className = "" }: { className?: string }) {
       </div>
 
       <div className="relative z-10 w-full max-w-md">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-500 text-xl font-bold text-white shadow-lg shadow-brand-500/25 sm:h-16 sm:w-16 sm:text-2xl">
-          {brand.letter}
-        </div>
+        <BrandMark className="mx-auto h-16 w-16 sm:h-20 sm:w-20" />
         <h2 className="mt-6 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
           {brand.name}
         </h2>

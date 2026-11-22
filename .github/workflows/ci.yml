@@ -5,32 +5,43 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   server:
     name: Go tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          go-version-file: apps/server/go.mod
+          go-version: '1.26.11'
+      - name: Vet and format
+        working-directory: apps/server
+        run: |
+          go vet ./...
+          test -z "$(gofmt -l .)"
       - name: Test
         working-directory: apps/server
         run: go test ./...
+      - name: Vulnerability scan
+        working-directory: apps/server
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   panel:
     name: Panel typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/panel/package-lock.json
       - name: Install and typecheck
         working-directory: apps/panel
-        run: npm ci && npx tsc -b --pretty false
+        run: npm ci && npx tsc -b --pretty false && npm run lint && node --experimental-strip-types --test src/lib/api-error.test.ts && npm audit --omit=dev
 
   release:
     name: Release and Docker image
@@ -41,16 +52,16 @@ jobs:
       contents: write
       packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: version
         env:
           GH_TOKEN: ${{ github.token }}
         run: python .github/scripts/should_release.py
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         if: steps.version.outputs.publish == 'true'
         with:
-          go-version-file: apps/server/go.mod
-      - uses: actions/setup-node@v7
+          go-version: '1.26.11'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: steps.version.outputs.publish == 'true'
         with:
           node-version: 22
@@ -93,26 +104,28 @@ jobs:
       - name: Image names
         if: steps.version.outputs.publish == 'true'
         id: image
+        env:
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
-          owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          owner=$(printf '%s' "$REPO_OWNER" | tr '[:upper:]' '[:lower:]')
           echo "name=ghcr.io/${owner}/harbor" >> "$GITHUB_OUTPUT"
           echo "dockerhub=foisalislambd/harbor" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         if: steps.version.outputs.publish == 'true'
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         if: steps.version.outputs.publish == 'true'
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         if: steps.version.outputs.publish == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         if: steps.version.outputs.publish == 'true'
         with:
           username: foisalislambd
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - uses: docker/build-push-action@v7
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         if: steps.version.outputs.publish == 'true'
         with:
           context: .
@@ -137,7 +150,8 @@ jobs:
         if: steps.version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
           gh api --method PUT -H "Accept: application/vnd.github+json" /user/packages/container/harbor -f visibility=public \
-            || gh api --method PUT -H "Accept: application/vnd.github+json" "/orgs/${{ github.repository_owner }}/packages/container/harbor" -f visibility=public \
+            || gh api --method PUT -H "Accept: application/vnd.github+json" "/orgs/${REPO_OWNER}/packages/container/harbor" -f visibility=public \
             || echo "Package pushed. Set it to public in GitHub Packages if this step could not."

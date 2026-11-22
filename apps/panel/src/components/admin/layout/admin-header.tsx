@@ -1,3 +1,4 @@
+import { BrandMark } from "@/components/brand-mark";
 import { adminConfig } from "@/config/admin.config";
 import { AdminUserMenu } from "@/components/admin/layout/admin-user-menu";
 import { AdminThemeToggle } from "@/components/admin/ui/admin-theme-toggle";
@@ -25,9 +26,7 @@ export function AdminHeader() {
         </button>
 
         <Link to="/" className="flex items-center gap-2 lg:hidden">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500 text-sm font-bold text-white">
-            {adminConfig.brand.letter}
-          </span>
+          <BrandMark className="h-9 w-9" />
           <span className="text-base font-semibold text-gray-900 dark:text-white">{adminConfig.brand.name}</span>
         </Link>
 

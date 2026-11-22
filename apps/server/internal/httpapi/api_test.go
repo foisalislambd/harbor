@@ -101,6 +101,7 @@ func postJSON(t *testing.T, h http.Handler, path string, payload any, cookieHead
 	}
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(raw))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Harbor-Request", "1")
 	if cookieHeader != "" {
 		req.Header.Set("Cookie", cookieHeader)
 	}
@@ -138,6 +139,7 @@ func TestPausedProjectRejectsPush(t *testing.T) {
 	})
 	pauseReq := httptest.NewRequest(http.MethodPatch, "/api/v1/projects/"+created.ID, bytes.NewReader(raw))
 	pauseReq.Header.Set("Content-Type", "application/json")
+	pauseReq.Header.Set("X-Harbor-Request", "1")
 	pauseReq.Header.Set("Cookie", cookie(setup))
 	paused := httptest.NewRecorder()
 	handler.ServeHTTP(paused, pauseReq)

@@ -4,13 +4,17 @@
 package providers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 
+	"harbor/internal/copier"
+	"harbor/internal/netguard"
 	"harbor/internal/remote/r2"
 	"harbor/internal/store"
+	"harbor/internal/telegram"
 )
 
 const (
@@ -33,6 +37,7 @@ type Provider struct {
 	NeedsEndpoint       bool     `json:"endpoint"`
 	EndpointPlaceholder string   `json:"endpoint_placeholder"`
 	AllowHTTP           bool     `json:"allow_http"`
+	Telegram            bool     `json:"telegram,omitempty"`
 	endpointTemplate    string
 	fixedEndpoint       string
 	sigRegion           string
@@ -81,6 +86,9 @@ func Prepare(d store.Destination) (store.Destination, error) {
 	provider, ok := ByID(d.Provider)
 	if !ok {
 		return store.Destination{}, errors.New("choose a storage service")
+	}
+	if provider.Telegram {
+		return telegram.Prepare(d)
 	}
 	d.Region = strings.ToLower(strings.TrimSpace(d.Region))
 	d.Endpoint = strings.TrimSpace(d.Endpoint)
@@ -131,6 +139,28 @@ func Open(d store.Destination) (*r2.Client, error) {
 	}, nil
 }
 
+// s3Copier adapts the S3 client to the destination interface.
+type s3Copier struct{ *r2.Client }
+
+func (s s3Copier) Put(ctx context.Context, up copier.Upload) (string, error) {
+	if err := s.PutFile(ctx, up.Key, up.Path, up.ContentType, up.Checksum, up.Size); err != nil {
+		return "", err
+	}
+	return up.Key, nil
+}
+
+// Connect opens the destination that will copy backups.
+func Connect(d store.Destination) (copier.Store, error) {
+	if d.Provider == store.ProviderTelegram {
+		return telegram.Open(d)
+	}
+	client, err := Open(d)
+	if err != nil {
+		return nil, err
+	}
+	return s3Copier{client}, nil
+}
+
 func endpointFor(provider Provider, d store.Destination) (string, string, error) {
 	if provider.ID == store.ProviderCloudflareR2 {
 		endpoint, err := r2.EndpointURL(d.AccountID, d.Jurisdiction)
@@ -145,6 +175,12 @@ func endpointFor(provider Provider, d store.Destination) (string, string, error)
 	}
 	if provider.NeedsEndpoint {
 		endpoint = d.Endpoint
+		if err := netguard.CheckURL(endpoint); err != nil {
+			if errors.Is(err, netguard.ErrBlocked) {
+				return "", "", errors.New("endpoint cannot point at a link-local or metadata address")
+			}
+			return "", "", err
+		}
 	}
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
@@ -195,6 +231,19 @@ func regionService(id, name, group, summary, placeholder, template string, steps
 }
 
 var catalog = []Provider{
+	{
+		ID: store.ProviderTelegram, Name: "Telegram", Group: "Messaging", Telegram: true,
+		Summary: "Upload each backup from your own Telegram account.",
+		Steps: []string{
+			"Open https://my.telegram.org/apps, create an application, and copy the api_id and api_hash.",
+			"Enter the phone number of the account that should send the backups, then save the destination.",
+			"On Destinations, scan the QR code from the phone: Telegram, Settings, Devices, Link Desktop Device. A phone code is there if you need it.",
+			"Leave the target empty for Saved Messages, or use a @username, an invite link, or a numeric id. A forum topic id is optional.",
+			"A regular account sends one document up to 2 GB. A Premium account sends up to 4 GB. Larger backups are split into numbered parts you join with cat.",
+			"This signs in as you, not as a bot. Log out on Destinations to revoke the session. The api hash and session stay encrypted.",
+		},
+		FreeNote: "The api hash and MTProto session are stored encrypted and are not shown again.",
+	},
 	{
 		ID: store.ProviderCloudflareR2, Name: "Cloudflare R2", Group: "Common",
 		Summary: "10 GB of Standard storage free each month, and egress is free.",

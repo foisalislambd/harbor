@@ -11,8 +11,8 @@ import (
 	"io/fs"
 	"log"
 	"mime"
+	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"harbor/internal/config"
+	"harbor/internal/netguard"
 	"harbor/internal/panel"
 	"harbor/internal/replicate"
 	"harbor/internal/store"
@@ -31,11 +32,27 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const sessionCookie = "harbor_session"
+const (
+	sessionCookie = "harbor_session"
+	maxJSONBody   = 1 << 20
+	maxLoginFails = 8
+)
+
+// dummyPasswordHash keeps a missing account on the same bcrypt path as a real one.
+var dummyPasswordHash []byte
+
+func init() {
+	hash, err := bcrypt.GenerateFromPassword([]byte("harbor-login-timing"), bcrypt.DefaultCost)
+	if err != nil {
+		panic(err)
+	}
+	dummyPasswordHash = hash
+}
 
 type API struct {
-	cfg   config.Config
-	store *store.Store
+	cfg           config.Config
+	store         *store.Store
+	loginAttempts *attemptLimiter
 }
 
 type principal struct {
@@ -55,13 +72,16 @@ func (p principal) Actor() string {
 }
 
 func New(cfg config.Config, st *store.Store) *API {
-	return &API{cfg: cfg, store: st}
+	return &API{cfg: cfg, store: st, loginAttempts: newAttemptLimiter(maxLoginFails, 15*time.Minute)}
 }
 
 func (a *API) Handler() http.Handler {
 	r := chi.NewRouter()
+	r.Use(securityHeaders)
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	if a.cfg.TrustProxy {
+		r.Use(middleware.RealIP)
+	}
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
 	if a.cfg.CORSOrigin != "" {
@@ -103,8 +123,17 @@ func (a *API) Handler() http.Handler {
 			r.Get("/destination-providers", a.listProviders)
 			r.Get("/destinations", a.listDestinations)
 			r.Post("/destinations", a.createDestination)
+			r.Get("/destinations/{destinationID}", a.getDestination)
+			r.Patch("/destinations/{destinationID}", a.updateDestination)
 			r.Delete("/destinations/{destinationID}", a.deleteDestination)
 			r.Post("/destinations/{destinationID}/test", a.testDestination)
+			r.Post("/destinations/{destinationID}/telegram/code", a.telegramSendCode)
+			r.Post("/destinations/{destinationID}/telegram/qr", a.telegramQR)
+			r.Post("/destinations/{destinationID}/telegram/qr/poll", a.telegramQRPoll)
+			r.Post("/destinations/{destinationID}/telegram/email", a.telegramSendEmail)
+			r.Post("/destinations/{destinationID}/telegram/email/verify", a.telegramVerifyEmail)
+			r.Post("/destinations/{destinationID}/telegram/login", a.telegramSignIn)
+			r.Post("/destinations/{destinationID}/telegram/logout", a.telegramLogout)
 			r.Post("/projects/{projectID}/replicate", a.replicateProject)
 			r.Post("/backups/{backupID}/replicate", a.replicateBackup)
 		})
@@ -139,7 +168,7 @@ func (a *API) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", a.cfg.CORSOrigin)
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Harbor-Request")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Vary", "Origin")
 		if r.Method == http.MethodOptions {
@@ -208,10 +237,39 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-func decode(r *http.Request, dest any) error {
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		h.Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'")
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			h.Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func readJSON(w http.ResponseWriter, r *http.Request, dest any) bool {
+	if r.ContentLength > maxJSONBody {
+		writeError(w, http.StatusRequestEntityTooLarge, "request body is too large")
+		return false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	return dec.Decode(dest)
+	if err := dec.Decode(dest); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) || strings.Contains(err.Error(), "request body too large") {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body is too large")
+			return false
+		}
+		writeError(w, http.StatusBadRequest, "invalid json")
+		return false
+	}
+	return true
 }
 
 func (a *API) health(w http.ResponseWriter, r *http.Request) {
@@ -224,6 +282,7 @@ func (a *API) health(w http.ResponseWriter, r *http.Request) {
 		"ok":          true,
 		"version":     config.Version,
 		"needs_setup": n == 0,
+		"public_url":  a.cfg.PublicURL,
 	})
 }
 
@@ -237,6 +296,9 @@ func (a *API) setupStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) setup(w http.ResponseWriter, r *http.Request) {
+	if !requireBrowserHeader(w, r) {
+		return
+	}
 	n, err := a.store.UserCount(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "database unavailable")
@@ -251,8 +313,7 @@ func (a *API) setup(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !readJSON(w, r, &body) {
 		return
 	}
 	if err := validateAccount(body.Name, body.Email, body.Password); err != nil {
@@ -279,19 +340,31 @@ func (a *API) setup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) login(w http.ResponseWriter, r *http.Request) {
+	if !requireBrowserHeader(w, r) {
+		return
+	}
 	var body struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !readJSON(w, r, &body) {
+		return
+	}
+	if a.credentialsLocked(r, body.Email) {
+		writeError(w, http.StatusTooManyRequests, "too many attempts, try again later")
 		return
 	}
 	user, err := a.store.UserByEmail(r.Context(), body.Email)
-	if err != nil || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password)) != nil {
+	hash := dummyPasswordHash
+	if err == nil {
+		hash = []byte(user.Password)
+	}
+	if err != nil || bcrypt.CompareHashAndPassword(hash, []byte(body.Password)) != nil {
+		a.noteCredentialFailure(r, body.Email)
 		writeError(w, http.StatusUnauthorized, "invalid email or password")
 		return
 	}
+	a.clearCredentialFailures(r, body.Email)
 	a.store.AddAudit(r.Context(), "user:"+user.Email, "auth.login", user.ID, "")
 	a.startSession(w, r, user)
 }
@@ -302,17 +375,39 @@ func (a *API) startSession(w http.ResponseWriter, r *http.Request, user store.Us
 		writeError(w, http.StatusInternalServerError, "could not start session")
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, a.sessionCookie(raw, expires))
+	user.Password = ""
+	writeJSON(w, http.StatusOK, map[string]any{"user": user})
+}
+
+func (a *API) sessionCookie(raw string, expires time.Time) *http.Cookie {
+	maxAge := int(time.Until(expires).Seconds())
+	if maxAge < 1 {
+		maxAge = 1
+	}
+	return &http.Cookie{
 		Name:     sessionCookie,
 		Value:    raw,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Expires:  expires,
+		MaxAge:   maxAge,
 		Secure:   a.cfg.CookieSecure,
+	}
+}
+
+func (a *API) clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   a.cfg.CookieSecure,
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
 	})
-	user.Password = ""
-	writeJSON(w, http.StatusOK, map[string]any{"user": user})
 }
 
 func (a *API) me(w http.ResponseWriter, r *http.Request) {
@@ -324,7 +419,7 @@ func (a *API) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		_ = a.store.DeleteSession(r.Context(), c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, MaxAge: -1, Expires: time.Unix(0, 0)})
+	a.clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -333,20 +428,25 @@ func (a *API) changePassword(w http.ResponseWriter, r *http.Request) {
 		CurrentPassword string `json:"current_password"`
 		NewPassword     string `json:"new_password"`
 	}
-	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
-		return
-	}
-	if len(body.NewPassword) < 8 {
-		writeError(w, http.StatusBadRequest, "password must be at least 8 characters")
+	if !readJSON(w, r, &body) {
 		return
 	}
 	p := principalFrom(r)
+	if a.credentialsLocked(r, p.User.Email) {
+		writeError(w, http.StatusTooManyRequests, "too many attempts, try again later")
+		return
+	}
+	if err := validatePassword(body.NewPassword); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	user, err := a.store.UserByID(r.Context(), p.User.ID)
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.CurrentPassword)) != nil {
+		a.noteCredentialFailure(r, p.User.Email)
 		writeError(w, http.StatusUnauthorized, "current password is wrong")
 		return
 	}
+	a.clearCredentialFailures(r, p.User.Email)
 	hash, err := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "could not hash password")
@@ -355,6 +455,11 @@ func (a *API) changePassword(w http.ResponseWriter, r *http.Request) {
 	if err := a.store.UpdatePassword(r.Context(), user.ID, string(hash)); err != nil {
 		writeError(w, http.StatusInternalServerError, "could not update password")
 		return
+	}
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		if err := a.store.DeleteOtherSessions(r.Context(), user.ID, c.Value); err != nil {
+			log.Printf("revoke sessions: %v", err)
+		}
 	}
 	a.store.AddAudit(r.Context(), p.Actor(), "auth.password", user.ID, "")
 	w.WriteHeader(http.StatusNoContent)
@@ -384,11 +489,13 @@ func (a *API) getSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) putSettings(w http.ResponseWriter, r *http.Request) {
+	if !requireOwner(w, r) {
+		return
+	}
 	var body struct {
 		InstanceName string `json:"instance_name"`
 	}
-	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !readJSON(w, r, &body) {
 		return
 	}
 	name := strings.TrimSpace(body.InstanceName)
@@ -427,8 +534,7 @@ func (a *API) createUser(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !readJSON(w, r, &body) {
 		return
 	}
 	if err := validateAccount(body.Name, body.Email, body.Password); err != nil {
@@ -442,7 +548,11 @@ func (a *API) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 	user, err := a.store.CreateUser(r.Context(), body.Email, body.Name, string(hash), "operator")
 	if err != nil {
-		writeError(w, http.StatusConflict, "a user with that email already exists")
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			writeError(w, http.StatusConflict, "a user with that email already exists")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not create user")
 		return
 	}
 	user.Password = ""
@@ -519,8 +629,7 @@ func (a *API) createProject(w http.ResponseWriter, r *http.Request) {
 		RetentionDays  *int   `json:"retention_days"`
 		QuotaBytes     *int64 `json:"quota_bytes"`
 	}
-	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !readJSON(w, r, &body) {
 		return
 	}
 	count, days := 14, 30
@@ -575,8 +684,7 @@ func (a *API) updateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body projectBody
-	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !readJSON(w, r, &body) {
 		return
 	}
 	if strings.TrimSpace(body.Status) == "" {
@@ -664,8 +772,7 @@ func (a *API) createKey(w http.ResponseWriter, r *http.Request) {
 		Name   string `json:"name"`
 		Scopes string `json:"scopes"`
 	}
-	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !readJSON(w, r, &body) {
 		return
 	}
 	if name := strings.TrimSpace(body.Name); name == "" || len(name) > 80 {
@@ -720,6 +827,9 @@ func (a *API) listWebhooks(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []store.Webhook{}
 	}
+	for i := range items {
+		items[i].Secret = ""
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
@@ -731,8 +841,7 @@ func (a *API) createWebhook(w http.ResponseWriter, r *http.Request) {
 		URL    string `json:"url"`
 		Events string `json:"events"`
 	}
-	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !readJSON(w, r, &body) {
 		return
 	}
 	if err := validWebhookURL(body.URL); err != nil {
@@ -794,8 +903,7 @@ func (a *API) createSchedule(w http.ResponseWriter, r *http.Request) {
 		Name          string `json:"name"`
 		IntervalHours int    `json:"interval_hours"`
 	}
-	if err := decode(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json")
+	if !readJSON(w, r, &body) {
 		return
 	}
 	if name := strings.TrimSpace(body.Name); name == "" || len(name) > 80 {
@@ -990,6 +1098,8 @@ func (a *API) ingest(w http.ResponseWriter, r *http.Request, projectID string) {
 	}
 	if mediatype, _, err := mime.ParseMediaType(ctype); err == nil {
 		ctype = mediatype
+	} else {
+		ctype = "application/octet-stream"
 	}
 	backup, err := a.store.CreateBackup(r.Context(), store.Backup{
 		ProjectID:   project.ID,
@@ -1085,7 +1195,7 @@ func (a *API) downloadBackup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer body.Close()
-		w.Header().Set("Content-Type", b.ContentType)
+		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": b.Filename}))
 		w.Header().Set("X-Checksum-Sha256", b.Checksum)
@@ -1094,7 +1204,7 @@ func (a *API) downloadBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
-	w.Header().Set("Content-Type", b.ContentType)
+	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": b.Filename}))
 	w.Header().Set("X-Checksum-Sha256", b.Checksum)
@@ -1163,6 +1273,9 @@ func (a *API) allowProject(w http.ResponseWriter, r *http.Request, projectID, sc
 
 func (a *API) requireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !requireBrowserHeader(w, r) {
+			return
+		}
 		p, ok := a.authenticate(r)
 		if !ok || p.IsAPIKey {
 			writeError(w, http.StatusUnauthorized, "sign in required")
@@ -1174,6 +1287,9 @@ func (a *API) requireUser(next http.Handler) http.Handler {
 
 func (a *API) requireAny(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if bearer(r) == "" && !requireBrowserHeader(w, r) {
+			return
+		}
 		p, ok := a.authenticate(r)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "authentication required")
@@ -1237,6 +1353,10 @@ func validateAccount(name, email, password string) error {
 	if !strings.Contains(email, "@") || strings.HasPrefix(email, "@") || strings.HasSuffix(email, "@") || len(email) > 200 {
 		return errors.New("a valid email is required")
 	}
+	return validatePassword(password)
+}
+
+func validatePassword(password string) error {
 	if len(password) < 8 {
 		return errors.New("password must be at least 8 characters")
 	}
@@ -1244,6 +1364,66 @@ func validateAccount(name, email, password string) error {
 		return errors.New("password must be at most 72 bytes")
 	}
 	return nil
+}
+
+func clientHost(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+func credentialKeys(r *http.Request, email string) []string {
+	keys := []string{"ip:" + clientHost(r)}
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email != "" {
+		keys = append(keys, "email:"+email)
+	}
+	return keys
+}
+
+func (a *API) credentialsLocked(r *http.Request, email string) bool {
+	now := time.Now()
+	for _, key := range credentialKeys(r, email) {
+		if a.loginAttempts.blocked(key, now) {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *API) noteCredentialFailure(r *http.Request, email string) {
+	now := time.Now()
+	for _, key := range credentialKeys(r, email) {
+		a.loginAttempts.recordFailure(key, now)
+	}
+}
+
+func (a *API) clearCredentialFailures(r *http.Request, email string) {
+	for _, key := range credentialKeys(r, email) {
+		a.loginAttempts.reset(key)
+	}
+}
+
+func requireOwner(w http.ResponseWriter, r *http.Request) bool {
+	if principalFrom(r).User.Role != "owner" {
+		writeError(w, http.StatusForbidden, "only the owner can do that")
+		return false
+	}
+	return true
+}
+
+func requireBrowserHeader(w http.ResponseWriter, r *http.Request) bool {
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	}
+	if r.Header.Get("X-Harbor-Request") == "1" {
+		return true
+	}
+	writeError(w, http.StatusForbidden, "missing X-Harbor-Request header")
+	return false
 }
 
 func validateProject(body projectBody, updating bool) error {
@@ -1290,9 +1470,11 @@ func validWebhookURL(raw string) error {
 	if len(raw) > 500 {
 		return errors.New("webhook url is too long")
 	}
-	parsed, err := url.Parse(raw)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return errors.New("webhook url must be an http or https URL")
+	if err := netguard.CheckURL(raw); err != nil {
+		if errors.Is(err, netguard.ErrBlocked) {
+			return errors.New("webhook url cannot point at a link-local or metadata address")
+		}
+		return err
 	}
 	return nil
 }

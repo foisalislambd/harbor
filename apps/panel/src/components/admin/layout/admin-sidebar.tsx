@@ -1,3 +1,4 @@
+import { BrandMark } from "@/components/brand-mark";
 import { adminConfig, adminNavItems, type AdminNavItem } from "@/config/admin.config";
 import {
   SIDEBAR_WIDTH_COLLAPSED,
@@ -49,9 +50,9 @@ export function AdminSidebar() {
           ? { width: desktopWidth }
           : { width: Math.min(320, SIDEBAR_WIDTH_EXPANDED) }
       }
-      className={`fixed top-0 left-0 z-50 flex h-dvh flex-col border-r border-gray-200 bg-white transition-[width,transform] duration-300 ease-in-out dark:border-gray-800 dark:bg-gray-900 ${
-        isMobileOpen ? "translate-x-0" : "-translate-x-full"
-      } lg:translate-x-0`}
+      className={`top-0 left-0 z-50 flex h-dvh shrink-0 flex-col border-r border-gray-200 bg-white transition-[width,transform] duration-300 ease-in-out max-lg:fixed dark:border-gray-800 dark:bg-gray-900 ${
+        isMobileOpen ? "max-lg:translate-x-0" : "max-lg:-translate-x-full"
+      }`}
       aria-label="Admin navigation"
       aria-hidden={mobileClosed || undefined}
       inert={mobileClosed || undefined}
@@ -62,9 +63,7 @@ export function AdminSidebar() {
           onClick={closeMobileSidebar}
           className={`flex min-w-0 flex-1 items-center gap-2 ${!showLabels ? "justify-center" : ""}`}
         >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-500 text-sm font-bold text-white">
-            {brand.letter}
-          </span>
+          <BrandMark className="h-8 w-8" />
           {showLabels && (
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">

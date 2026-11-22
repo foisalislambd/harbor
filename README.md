@@ -1,56 +1,114 @@
+<p align="center">
+  <img src="docs/brand/harbor-logo-transparent.png" alt="Harbor" width="160">
+</p>
+
 # Harbor
 
-Open-source, self-hosted backup vault. One Go process and a SQLite database store archives, database dumps, and files from as many applications as you want. It runs on a PC, a VPS, or in Docker.
+Self-hosted backup vault. One Go process and a SQLite database store archives, database dumps, and files from as many applications as you want.
 
-The panel lives at `/`. The API lives at `/api/v1`.
+[![CI](https://github.com/foisalislambd/harbor/actions/workflows/ci.yml/badge.svg)](https://github.com/foisalislambd/harbor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go 1.26](https://img.shields.io/badge/go-1.26-00ADD8.svg)](apps/server/go.mod)
 
-## Install
+The panel is at `/`. The API is at `/api/v1`. Run it on a PC, a VPS, or in Docker. The current release is [v0.2.0](https://github.com/foisalislambd/harbor/releases/tag/v0.2.0) ([VERSION.md](VERSION.md)).
 
-[VERSION.md](VERSION.md) is the release version. A push to `main` publishes that version when it is higher than every existing GitHub release. The same number, or a lower one, does nothing.
+![Harbor dashboard](docs/screenshots/dashboard.png)
 
-The repository is [foisalislambd/harbor](https://github.com/foisalislambd/harbor). The same image is published to `ghcr.io/foisalislambd/harbor` and to Docker Hub as `foisalislambd/harbor`.
+## Features
+
+- Projects with pause, retention (last N and/or N days), and a byte quota. `0` means unlimited. If a create request omits retention, Harbor keeps the last 14 snapshots for 30 days.
+- API keys scoped to one project, with `backup:read`, `backup:write`, and `backup:delete`. The secret is shown once.
+- Content-addressed blobs, so identical uploads share one file.
+- Schedules that turn overdue when a backup does not arrive in time.
+- Webhooks for `backup.created` and `backup.deleted`, signed with `X-Harbor-Signature`.
+- A second copy in object storage. Cloudflare R2, Backblaze B2, Amazon S3, Wasabi, Google Cloud Storage, DigitalOcean Spaces, Hetzner, Scaleway, Linode, Vultr, OVH, Exoscale, Storj, Tigris, Filebase, IDrive e2, Oracle, IBM, Alibaba, Tencent, Contabo, Supabase, MEGA, and self-hosted S3 (MinIO, Ceph, Garage, SeaweedFS, or another S3-compatible endpoint) use the same form. Harbor checks the bucket before saving. R2 and B2 stop at their 10 GB free allowance unless you allow more.
+- A Telegram destination. Create an application at my.telegram.org, sign in as your account, and Harbor uploads each backup as a document. The api hash and MTProto session are encrypted at rest and are not shown again.
+- An audit log, extra panel users, and a background retention pass every 15 minutes.
+
+## Screens
+
+The first visit creates the owner. After that, the same page is a sign-in form.
+
+![Create the owner account](docs/screenshots/setup.png)
+
+Projects, backups, and destinations:
+
+![Projects](docs/screenshots/projects.png)
+
+![Project settings and API keys](docs/screenshots/project.png)
+
+![Backups](docs/screenshots/backups.png)
+
+![Destinations](docs/screenshots/destinations.png)
+
+![Telegram destination](docs/screenshots/telegram.png)
+
+The API guide, activity log, and settings are in the sidebar: [guide](docs/screenshots/guide.png), [activity](docs/screenshots/activity.png), [settings](docs/screenshots/settings.png).
+
+## Telegram
+
+Harbor uploads with the MTProto API as your user account, the same way Telethon, Pyrogram, and [gotd](https://github.com/gotd/td) do. It does not use a bot token.
+
+1. Open [my.telegram.org/apps](https://my.telegram.org/apps) and create an application. Copy the api_id and api_hash. The api_id is a number. The api_hash is shown once in the form and then stored encrypted.
+2. In Harbor, open Destinations, choose Telegram, and enter the api_id, api_hash, and the phone number of the account that should send backups.
+3. Leave the target empty to use Saved Messages. Otherwise enter a public `@username`, an invite link, or the numeric id of a chat already on that account. A forum topic id is optional. An invite link joins the chat if you are not already in it.
+4. Save the destination. On the Destinations page, scan the QR code from the Telegram app: Settings, Devices, Link Desktop Device. If the account has a cloud password, enter it. Phone-code login is under “Use phone code instead”. Log out on the same card to revoke the session. The api hash and session stay encrypted.
+5. Choose that destination on a project. Each backup is one document. The caption includes the project, backup name, kind, size, timestamp, and the SHA-256 of the whole file.
+
+A regular account can send one document of up to 2 GB (4000 parts of 512 KB). A Premium account can send 4 GB (8000 parts). Harbor reads the Premium flag on the signed-in user. Anything larger is split into numbered files named `harbor-<name>-partNN-of-NN.bin`. Download those parts in order and join them:
+
+```bash
+cat harbor-nightly-part01-of-03.bin harbor-nightly-part02-of-03.bin harbor-nightly-part03-of-03.bin > nightly.bin
+sha256sum nightly.bin
+```
+
+Files at or under the account limit are uploaded with `upload.saveBigFilePart` when they are over 10 MB, as one document. Harbor keeps one MTProto connection open for the whole upload, retries `FLOOD_WAIT` for up to two minutes, and retries a failed backup from the start on the next copy. A copy that already succeeded is not uploaded again. Telegram only keeps unfinished upload parts for a short time, so a partial upload is not resumed across a restart.
+
+When retention deletes a backup, Harbor calls `messages.deleteMessages` for Saved Messages, private chats, and basic groups, and `channels.deleteMessages` for channels and supergroups. Removing the destination leaves the messages in the chat.
+
+This session can send and read messages as that user. Keep the data directory as carefully as a password database, and log out if the account should stop being used. The api hash and session are never returned by the API.
+
+The server must be able to open outbound TCP port 443 to Telegram. Harbor stops a login attempt after about 45 seconds and returns Telegram's error, such as `PHONE_NUMBER_INVALID`, `API_ID_INVALID`, or `FLOOD_WAIT`, instead of waiting until a proxy gives up. If Harbor is behind Cloudflare or another reverse proxy, that proxy's timeout should be longer than 45 seconds. A 524, 502, or 504 page from the proxy means the request never reached a finished Telegram response.
+
+## Tech stack
+
+- Go 1.26 server (`chi`, `modernc.org/sqlite`, bcrypt, `gotd` for Telegram)
+- React 19 panel (Vite, TypeScript, Tailwind CSS 4)
+- SQLite for metadata, files on disk for blobs
+- Optional S3-compatible replication, and Telegram document uploads, implemented in-process (no extra daemon)
+
+## Quick start
 
 ### Docker
 
-```bash
-docker pull ghcr.io/foisalislambd/harbor:0.1.1
-docker run -d --name harbor -p 8787:8787 -v harbor-data:/data ghcr.io/foisalislambd/harbor:0.1.1
-
-# or Docker Hub
-docker pull foisalislambd/harbor:0.1.1
-```
-
-Open http://127.0.0.1:8787. The first visit creates the owner account. Data stays in the `harbor-data` volume.
-
-### Compose from the published image
-
-```yaml
-services:
-  harbor:
-    image: foisalislambd/harbor:0.1.1
-    ports:
-      - "8787:8787"
-    volumes:
-      - harbor-data:/data
-volumes:
-  harbor-data:
-```
+Images are published to `ghcr.io/foisalislambd/harbor` and `foisalislambd/harbor` when a higher version in `VERSION.md` is pushed to `main`.
 
 ```bash
-docker compose up -d
+docker pull ghcr.io/foisalislambd/harbor:0.2.0
+docker run -d --name harbor -p 8787:8787 -v harbor-data:/data ghcr.io/foisalislambd/harbor:0.2.0
 ```
 
-### Desktop app
+Open http://127.0.0.1:8787 and create the owner account. Data stays in the `harbor-data` volume. The image runs as the `harbor` user and exposes `GET /api/v1/health`.
 
-The release binary includes the same panel. Run it and a window opens on this computer. The first visit creates the owner account. Backups stay in the user data folder, and the API listens only on `127.0.0.1:8787`.
+### Compose
 
-Windows: download [harbor-windows-amd64.exe](https://github.com/foisalislambd/harbor/releases/download/v0.1.1/harbor-windows-amd64.exe) and open it. Data is in `%AppData%\Harbor`.
+```bash
+docker compose up --build -d
+```
+
+`docker-compose.yml` builds the local Dockerfile, publishes port 8787, and mounts a `harbor-data` volume. To run a published image instead, set `image` to `ghcr.io/foisalislambd/harbor:0.2.0` (or `foisalislambd/harbor:0.2.0`) and remove `build`.
+
+### Desktop
+
+A release binary includes the panel. `harbor` and `harbor desktop` open a window and listen only on `127.0.0.1:8787`.
+
+Windows: download [harbor-windows-amd64.exe](https://github.com/foisalislambd/harbor/releases/download/v0.2.0/harbor-windows-amd64.exe). Data is in `%AppData%\Harbor`.
 
 Linux:
 
 ```bash
-curl -fsSL -o harbor "https://github.com/foisalislambd/harbor/releases/download/v0.1.1/harbor-linux-amd64"
-curl -fsSL -o SHA256SUMS "https://github.com/foisalislambd/harbor/releases/download/v0.1.1/SHA256SUMS"
+curl -fsSL -o harbor "https://github.com/foisalislambd/harbor/releases/download/v0.2.0/harbor-linux-amd64"
+curl -fsSL -o SHA256SUMS "https://github.com/foisalislambd/harbor/releases/download/v0.2.0/SHA256SUMS"
 grep harbor-linux-amd64 SHA256SUMS | sha256sum -c -
 chmod +x harbor
 ./harbor
@@ -58,57 +116,59 @@ chmod +x harbor
 
 Data is in `~/.local/share/harbor` (or `$XDG_DATA_HOME/harbor`). Close the window to stop Harbor.
 
-macOS: download `harbor-darwin-arm64` or `harbor-darwin-amd64` from the [release](https://github.com/foisalislambd/harbor/releases/tag/v0.1.1), `chmod +x` it, and run it. Data is in `~/Library/Application Support/Harbor`.
+macOS: download `harbor-darwin-arm64` or `harbor-darwin-amd64` from the [release](https://github.com/foisalislambd/harbor/releases/tag/v0.2.0), `chmod +x` it, and run it. Data is in `~/Library/Application Support/Harbor`.
 
-Other archives on the release: `harbor-linux-arm64`. The same binary also sends backups:
+`harbor-linux-arm64` is on the same release. `harbor serve` runs the panel and API without a window. Use that on a VPS. The Docker image is headless.
 
-```bash
-harbor push -file backup.tar.gz -token hb_your_project_key -name nightly -kind archive -source my-app
-```
+### From source
 
-`harbor serve` runs the panel and API without a window. Use that on a VPS. `harbor` and `harbor desktop` open the window.
-
-The Docker image serves the panel and the API on port 8787 and does not open a window.
-
-## Layout
-
-```
-apps/server   Go API, blob store, desktop window, and `harbor` CLI
-apps/panel    React panel (ZenPanel shell, routes at /)
-```
-
-SQLite metadata and content-addressed files live in the data directory (`data/` by default).
-
-## Run it locally
+You need Go 1.26 or newer and Node.js 20 or newer.
 
 Terminal 1:
 
 ```bash
 cd apps/server
-go run ./cmd/harbor serve -addr :8787 -data data
+go run ./cmd/harbor serve -addr 127.0.0.1:8787 -data data
 ```
 
 Terminal 2:
 
 ```bash
 cd apps/panel
-npm install
+npm ci
 npm run dev
 ```
 
-Open http://127.0.0.1:5173. The dev server proxies `/api` to port 8787.
-
-An empty data directory signs in as `admin@harbor.local` / `admin@123456`. Change that password in Settings if this Harbor is reachable by anyone else.
-
-## Docker
+Open http://127.0.0.1:5173. The dev server proxies `/api` to port 8787. To serve the built panel from the Go process:
 
 ```bash
-docker compose up --build
+cd apps/panel
+npm ci
+npm run build
+cd ../server
+go run ./cmd/harbor serve -addr 127.0.0.1:8787 -data data -panel ../panel/dist
 ```
 
-The panel and API are both served on http://127.0.0.1:8787.
+## Configuration
 
-## Send a backup from any app
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `HARBOR_ADDR` | `:8787` | Listen address. The desktop app uses `127.0.0.1:8787` when this is unset. |
+| `HARBOR_DATA_DIR` | `data` | SQLite file and blobs. The desktop app uses the user data directory when this is unset. |
+| `HARBOR_PANEL_DIR` | empty | Built panel to serve at `/`. A release binary embeds one. |
+| `HARBOR_MAX_UPLOAD_BYTES` | 8 GiB | Upload limit. A non-positive value, or one above 1 TiB, falls back to the default. |
+| `HARBOR_SESSION_HOURS` | 336 (14 days) | Panel session length. Values outside 1 hour through 1 year fall back to the default. |
+| `HARBOR_COOKIE_SECURE` | empty | Set to `1` behind HTTPS so the session cookie is `Secure`. |
+| `HARBOR_CORS_ORIGIN` | empty | Exact origin, such as `https://panel.example.com`, when the panel is on another host. A path is rejected at startup. |
+| `HARBOR_TRUST_PROXY` | empty | Set to `1` only when a reverse proxy is the only client. Harbor then trusts `X-Forwarded-For` for rate limits and request logs. |
+| `HARBOR_SECRET_KEY` | empty | 32-byte key as 64 hex characters or base64. Used only when `secret.key` is not already in the data directory. Back this up outside the volume if you set it. |
+| `HARBOR_ENDPOINT` | `http://127.0.0.1:8787` | Default server for `harbor push`. |
+| `HARBOR_PUBLIC_URL` | empty | Origin used in the panel's example commands, such as `https://harbor.example.com`. A trailing slash is removed. A path, query, or username is rejected at startup. When this is empty, the panel uses the address in the browser. `GET /api/v1/health` returns it as `public_url`. |
+| `HARBOR_TOKEN` | empty | Default project API key for `harbor push`. |
+
+Flags on `harbor serve` override the address, data directory, and panel directory: `-addr`, `-data`, `-panel`.
+
+## Usage
 
 Create a project in the panel and copy its API key. That key can only see that project.
 
@@ -121,7 +181,7 @@ curl -X POST http://127.0.0.1:8787/api/v1/push \
   -F "source=my-app"
 ```
 
-Or use the same binary:
+The same binary can upload:
 
 ```bash
 harbor push -file backup.tar.gz -token hb_your_project_key -name nightly -kind archive -source my-app
@@ -136,36 +196,116 @@ With the same key:
 - `GET /api/v1/backups/{id}/download`
 - `DELETE /api/v1/backups/{id}`
 
-Panel users sign in with a session cookie and manage every project from `/`.
+## Connect an AI agent
 
-## What it keeps track of
+On the API guide (`/guide`), **Copy for AI agent** copies this prompt with this install's address already filled in: the address in the browser, or `HARBOR_PUBLIC_URL` when that is set. The page itself stays the short curl and CLI guide.
 
-- Projects, with pause, retention (last N and/or N days), and a byte quota. `0` means unlimited. If a create request omits retention, Harbor keeps the last 14 snapshots for 30 days. A project can also select a destination. Backups stay on this machine, and a selected destination receives a second copy.
-- Destinations. A project can keep a second copy in object storage. Cloudflare R2 and Backblaze B2 stop at their 10 GB free allowance unless you allow more. Amazon S3, Wasabi, Google Cloud Storage, DigitalOcean Spaces, Hetzner, Scaleway, Linode, Vultr, OVH, Exoscale, Storj, Tigris, Filebase, IDrive e2, Oracle, IBM, Alibaba, Tencent, Contabo, Supabase, MEGA, and self-hosted S3 such as MinIO are available the same way. Harbor checks the bucket before saving.
-- API keys with `backup:read`, `backup:write`, and `backup:delete`. The secret is shown once.
-- Content-addressed blobs, so identical uploads share one file.
-- Schedules that turn overdue when a backup does not arrive in time.
-- Webhooks for `backup.created` and `backup.deleted`, signed with `X-Harbor-Signature`.
-- An audit log, extra panel users, and a background retention pass every 15 minutes.
+The same prompt is below with a placeholder address. Replace `https://your-harbor.example` with the origin you open in the browser, such as `http://127.0.0.1:8787` for a local install. Create a project API key in the panel and paste the key into the chat yourself. The prompt does not contain it.
 
-## Environment
+```text
+Connect to this Harbor backup vault. Use only the HTTP API below. Do not invent paths, and do not use the panel session cookie.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `HARBOR_ADDR` | `:8787` | Listen address |
-| `HARBOR_DATA_DIR` | `data` | SQLite file and blobs |
-| `HARBOR_PANEL_DIR` | empty | Built panel to serve at `/` |
-| `HARBOR_MAX_UPLOAD_BYTES` | 8 GiB | Upload limit |
-| `HARBOR_SESSION_HOURS` | 336 | Panel session length |
-| `HARBOR_COOKIE_SECURE` | empty | Set to `1` behind HTTPS |
-| `HARBOR_CORS_ORIGIN` | empty | Exact origin if the panel is on another host |
-| `HARBOR_TOKEN` | empty | Default token for `harbor push` |
+Base URL: https://your-harbor.example
+Project API key: if I have not pasted a key that starts with hb_, ask me for it before any call except health. Send it as Authorization: Bearer <the key>.
+Never repeat the key, never write it into a repository, and never send it to a host other than the base URL.
 
-## Project files
+The key belongs to one project. It cannot create projects, keys, users, destinations, or settings. A new key can read, write, and delete backups. If a call returns 403, tell me which scope is missing and stop.
 
-- [LICENSE](LICENSE) — MIT
-- [CONTRIBUTING.md](CONTRIBUTING.md) — build, test, and pull requests
-- [SECURITY.md](SECURITY.md) — how to report a vulnerability
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- [CHANGELOG.md](CHANGELOG.md)
-- [VERSION.md](VERSION.md) — number published to GitHub releases, GHCR, and Docker Hub. Release binaries include the desktop panel.
+1. Confirm the server. No key is required.
+GET https://your-harbor.example/api/v1/health
+200 JSON has ok, version, needs_setup, and public_url.
+If needs_setup is true, stop. An owner still has to be created in the panel at https://your-harbor.example/.
+
+2. Store a file.
+POST https://your-harbor.example/api/v1/push
+Content-Type: multipart/form-data
+  file    required. The file bytes. An empty file is rejected.
+  name    optional, up to 200 characters. Defaults to the filename.
+  kind    optional: archive, database, files, or other. Default archive.
+  source  optional, up to 200 characters. The app that made the file.
+  note    optional, up to 2000 characters.
+  tags    optional, up to 500 characters.
+201 JSON is the backup: id, project_id, project_name, name, filename, kind, source, note, tags, size_bytes, checksum_sha256, content_type, created_at.
+409 means the project is paused. 413 means the file is over the upload limit or the project quota.
+
+Example:
+curl -X POST https://your-harbor.example/api/v1/push \
+  -H "Authorization: Bearer hb_your_project_key" \
+  -F "file=@backup.tar.gz" \
+  -F "name=nightly" \
+  -F "kind=archive" \
+  -F "source=my-app"
+
+3. List this project's backups.
+GET https://your-harbor.example/api/v1/backups
+Optional query: q, limit (default 50, max 200), offset.
+200 JSON: {"items":[...],"total":number}
+
+4. Read one backup.
+GET https://your-harbor.example/api/v1/backups/{id}
+
+5. Download the file.
+GET https://your-harbor.example/api/v1/backups/{id}/download
+The body is the file. Content-Disposition carries the filename. The X-Checksum-Sha256 header is the sha256 hex. Compare it with checksum_sha256 before trusting the file.
+
+6. Delete a backup only when I ask.
+DELETE https://your-harbor.example/api/v1/backups/{id}
+204 with an empty body. The key needs backup:delete.
+
+Errors are JSON {"error":"message"}.
+401 means the key is missing or wrong.
+403 means the key is missing backup:read, backup:write, or backup:delete.
+404 means the backup is gone, or it belongs to another project.
+
+After a push, tell me the id, name, size_bytes, and checksum_sha256. Do not upload .env files, keys, or passwords unless I name that file.
+```
+
+Panel users sign in with an HttpOnly session cookie and manage every project from `/`.
+
+`GET /api/v1/health` is public and reports the version, whether an owner still needs to be created, and `public_url` when `HARBOR_PUBLIC_URL` is set.
+
+## Project structure
+
+```
+apps/server     Go API, blob store, desktop window, and the harbor CLI
+apps/panel      React panel, routes at /
+Dockerfile      Multi-stage build: panel, then a static Go binary
+docker-compose.yml
+VERSION.md      Release version published to GitHub, GHCR, and Docker Hub
+```
+
+SQLite metadata and content-addressed files live in the data directory (`data/` by default). The directory is created mode `0700`.
+
+## Deployment
+
+Put Harbor behind HTTPS before it is reachable from the public internet. Terminate TLS at a reverse proxy, forward to `127.0.0.1:8787`, and set:
+
+```bash
+HARBOR_COOKIE_SECURE=1
+HARBOR_TRUST_PROXY=1
+```
+
+Leave `HARBOR_TRUST_PROXY` unset when clients connect to Harbor directly. Webhooks may call addresses on your own network. Harbor refuses link-local and cloud metadata addresses, and it does not follow redirects when it delivers a webhook. Cookie requests from the panel send `X-Harbor-Request: 1`. Only the owner can add or remove storage destinations.
+
+Destination credentials and webhook signing secrets are stored in SQLite. A copy of the data directory is a copy of those secrets. Back up that directory the way you would back up a password database.
+
+An install created by an older build may still have the account `admin@harbor.local` with the password `admin@123456`. Harbor logs a warning at startup when that password is still set. Change it in Settings. New installs do not create that account.
+
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability.
+
+## Development
+
+```bash
+cd apps/server && go test ./...
+cd apps/panel && npm ci && npx tsc -b --pretty false && npm run lint
+```
+
+CI on pull requests runs `gofmt`, `go vet`, `go test ./...`, the panel typecheck, and ESLint. A push to `main` that raises `VERSION.md` above every existing GitHub release builds binaries, publishes the container images, and opens a GitHub release. Docker Hub login uses the `DOCKERHUB_TOKEN` repository secret.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The project also has a [code of conduct](CODE_OF_CONDUCT.md) and a [changelog](CHANGELOG.md).
+
+## License
+
+[MIT](LICENSE). Copyright (c) 2026 Harbor contributors.
