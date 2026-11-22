@@ -1,9 +1,9 @@
 import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
 import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
-import { dangerButtonClass, fieldClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
+import { dangerButtonClass, fieldClass, labelClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
 import { api, downloadBackup, formatBytes, formatWhen, type Backup, type Project } from "@/lib/harbor-api";
-import { Archive, Download, Search, Trash2, Upload } from "lucide-react";
+import { Archive, Download, FileUp, Search, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -111,39 +111,49 @@ export default function BackupsPage() {
       {error && <p className="text-sm text-error-500">{error}</p>}
 
       <form onSubmit={upload} className="admin-card">
-        <div className="admin-card-body grid gap-3 md:grid-cols-4">
-          <select className={fieldClass} value={uploadProject} onChange={(e) => setUploadProject(e.target.value)} required>
-            <option value="">Project</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>{project.name}</option>
-            ))}
-          </select>
-          <select className={fieldClass} value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="archive">Archive</option>
-            <option value="database">Database</option>
-            <option value="files">Files</option>
-            <option value="other">Other</option>
-          </select>
-          <label className={`${fieldClass} relative flex cursor-pointer items-center focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-500/20`}>
-            <input
-              key={fileKey}
-              className="absolute inset-0 cursor-pointer opacity-0"
-              type="file"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              required
-            />
-            <span className={`block truncate ${file ? "text-gray-900 dark:text-white" : "text-gray-400"}`}>
-              {file ? file.name : "Choose a file"}
+        <div className="admin-card-body flex flex-col gap-3 md:flex-row md:items-end">
+          <label className="block min-w-0 md:w-56">
+            <span className={labelClass}>Project</span>
+            <select className={fieldClass} value={uploadProject} onChange={(e) => setUploadProject(e.target.value)} required>
+              <option value="">Select a project</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>{project.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block md:w-40">
+            <span className={labelClass}>Kind</span>
+            <select className={fieldClass} value={kind} onChange={(e) => setKind(e.target.value)}>
+              <option value="archive">Archive</option>
+              <option value="database">Database</option>
+              <option value="files">Files</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <label className="block min-w-0 flex-1">
+            <span className={labelClass}>File</span>
+            <span className={`${fieldClass} relative flex cursor-pointer items-center gap-2 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-500/20`}>
+              <FileUp className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+              <input
+                key={fileKey}
+                className="absolute inset-0 cursor-pointer opacity-0"
+                type="file"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                required
+              />
+              <span className={`block truncate ${file ? "text-gray-900 dark:text-white" : "text-gray-400"}`}>
+                {file ? file.name : "Choose a file"}
+              </span>
             </span>
           </label>
-          <button className={primaryButtonClass} disabled={uploading} type="submit">
+          <button className={`${primaryButtonClass} w-full shrink-0 md:w-auto`} disabled={uploading} type="submit">
             <Upload className="h-4 w-4" aria-hidden />
             {uploading ? "Uploading…" : "Upload"}
           </button>
         </div>
       </form>
 
-      <div className="flex flex-col gap-3 sm:flex-row">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <label className="relative block min-w-0 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden />
           <input
@@ -165,7 +175,7 @@ export default function BackupsPage() {
           />
         </label>
         <select
-          className={fieldClass}
+          className={`${fieldClass} sm:w-64 sm:shrink-0`}
           value={projectId}
           onChange={(e) => {
             const next = new URLSearchParams(params);
@@ -174,6 +184,7 @@ export default function BackupsPage() {
             next.delete("page");
             setParams(next);
           }}
+          aria-label="Filter by project"
         >
           <option value="">All projects</option>
           {projects.map((project) => (
