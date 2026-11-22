@@ -269,20 +269,23 @@ export default function ProjectDetailPage() {
 
       <section className="admin-card">
         <div className="admin-card-body space-y-4">
-          <AdminSectionTitle
-            icon={KeyRound}
-            title="API keys"
-            description="Send this key as Authorization: Bearer from the application. The full key is shown once."
-            actions={<CopyAgentButton prompt={agentPrompt(origin, project.name)} />}
-          />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+              <span className="admin-icon-well">
+                <KeyRound className="h-4 w-4" aria-hidden />
+              </span>
+              API keys
+            </h2>
+            <CopyAgentButton prompt={agentPrompt(origin, project.name)} />
+          </div>
           {freshToken && (
-            <div className="rounded-xl bg-brand-50 p-3 text-sm break-all text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
+            <div className="rounded-lg bg-brand-50 px-3 py-2 text-sm break-all text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
               {freshToken}
             </div>
           )}
-          <form onSubmit={createKey} className="flex flex-col gap-2 sm:flex-row">
-            <input className={fieldClass} placeholder="Key name" required value={keyName} onChange={(e) => setKeyName(e.target.value)} />
-            <button className={primaryButtonClass} type="submit">Create key</button>
+          <form onSubmit={createKey} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input className={`${fieldClass} sm:max-w-xs`} placeholder="Key name" required value={keyName} onChange={(e) => setKeyName(e.target.value)} />
+            <button className={`${primaryButtonClass} shrink-0`} type="submit">Create key</button>
           </form>
           <ul className="divide-y divide-gray-100 dark:divide-gray-800">
             {keys.map((key) => (
