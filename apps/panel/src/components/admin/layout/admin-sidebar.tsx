@@ -50,7 +50,7 @@ export function AdminSidebar() {
           ? { width: desktopWidth }
           : { width: Math.min(320, SIDEBAR_WIDTH_EXPANDED) }
       }
-      className={`top-0 left-0 z-50 flex h-dvh shrink-0 flex-col border-r border-gray-200 bg-white transition-[width,transform] duration-300 ease-in-out max-lg:fixed dark:border-gray-800 dark:bg-gray-900 ${
+      className={`top-0 left-0 z-50 flex h-dvh shrink-0 flex-col border-r border-gray-200 bg-white transition-[width,transform] duration-300 ease-in-out max-lg:fixed dark:border-[#243044] dark:bg-[#111827] ${
         isMobileOpen ? "max-lg:translate-x-0" : "max-lg:-translate-x-full"
       }`}
       aria-label="Admin navigation"
@@ -63,10 +63,10 @@ export function AdminSidebar() {
           onClick={closeMobileSidebar}
           className={`flex min-w-0 flex-1 items-center gap-2 ${!showLabels ? "justify-center" : ""}`}
         >
-          <BrandMark className="h-8 w-8" />
+          <BrandMark className="h-9 w-9" />
           {showLabels && (
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+              <p className="truncate text-base font-semibold text-gray-900 dark:text-white">
                 {brand.name}
               </p>
             </div>
@@ -84,11 +84,11 @@ export function AdminSidebar() {
         )}
       </div>
 
-      <nav className="no-scrollbar flex flex-1 flex-col gap-3 overflow-y-auto px-2.5 py-3">
+      <nav className="no-scrollbar flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-4">
         {groupNavItems(adminNavItems).map((group, index) => (
           <div key={group.section} className="flex flex-col gap-1">
             {showLabels ? (
-              <p className="px-2.5 pb-1 text-[11px] font-semibold tracking-wide text-gray-400 uppercase dark:text-gray-500">
+              <p className="px-3 pb-2 text-xs font-semibold tracking-wide text-gray-400 uppercase dark:text-gray-500">
                 {group.section}
               </p>
             ) : (
@@ -105,21 +105,17 @@ export function AdminSidebar() {
                   onClick={closeMobileSidebar}
                   title={!showLabels ? item.name : undefined}
                   aria-current={active ? "page" : undefined}
-                  className={`relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${
+                  className={`relative flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${
                     active
                       ? "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-100"
-                      : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/8"
+                      : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/8"
                   } ${!showLabels ? "justify-center px-0" : ""}`}
                 >
-                  <span
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
-                      active
-                        ? "bg-white text-brand-600 shadow-sm dark:bg-brand-500/20 dark:text-brand-100"
-                        : "text-gray-500 dark:text-gray-400"
+                  <Icon
+                    className={`h-5 w-5 shrink-0 ${
+                      active ? "text-brand-600 dark:text-brand-200" : "text-gray-500 dark:text-gray-400"
                     }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                  </span>
+                  />
                   {showLabels && <span className="truncate">{item.name}</span>}
                 </Link>
               );
@@ -155,7 +151,7 @@ export function AdminSidebar() {
           <button
             type="button"
             onClick={toggleSidebar}
-            className={`mt-1.5 flex w-full items-center gap-2 rounded-lg border border-gray-200 px-2.5 py-1.5 text-[13px] font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/5 ${!showLabels ? "justify-center" : ""}`}
+            className={`mt-1.5 flex h-10 w-full items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-white/5 ${!showLabels ? "justify-center" : ""}`}
             aria-label={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
           >
             {isExpanded ? (

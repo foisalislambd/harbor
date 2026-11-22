@@ -50,7 +50,7 @@ export default function SettingsPage() {
   if (!settings && !error) return <AdminLoading message="Loading settings…" />;
 
   return (
-    <div className="admin-content space-y-3">
+    <div className="admin-content space-y-6">
       <AdminPageHeader
         title="Settings"
       />

@@ -24,7 +24,7 @@ export function AdminAddButton({
       onClick={enabled ? onClick : undefined}
       disabled={!enabled}
       title={enabled ? label : "Available after you connect your API"}
-      className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold text-white ${
+      className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold text-white ${
         enabled
           ? "bg-brand-500 shadow-sm shadow-brand-500/20 hover:bg-brand-600"
           : "cursor-not-allowed bg-brand-500/50 text-white/90"

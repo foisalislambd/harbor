@@ -1,10 +1,10 @@
 .admin-shell {
   font-family: var(--font-admin-sans), ui-sans-serif, system-ui, sans-serif;
-  background-color: #f9fafb;
+  background-color: #f2f4f7;
 }
 
 .dark .admin-shell {
-  background-color: #0c111d;
+  background-color: #111827;
 }
 
 .admin-main {
@@ -12,43 +12,43 @@
   width: 100%;
   max-width: 100%;
   overflow: hidden;
-  background-color: #f9fafb;
+  background-color: #f2f4f7;
 }
 
 .dark .admin-main {
-  background-color: #101828;
+  background-color: #111827;
 }
 
 .admin-content {
   width: 100%;
-  max-width: none;
+  max-width: 72rem;
 }
 
 .admin-topbar {
-  height: 3.25rem;
+  height: 4rem;
   flex-shrink: 0;
   border-bottom: 1px solid #e4e7ec;
 }
 
 .dark .admin-topbar {
-  border-bottom-color: #1d2939;
+  border-bottom-color: #243044;
 }
 
 .admin-card {
-  border-radius: 0.875rem;
+  border-radius: 0.75rem;
   border: 1px solid #e4e7ec;
   background-color: #ffffff;
-  box-shadow: 0 1px 2px 0 rgba(16, 24, 40, 0.04);
+  box-shadow: 0 1px 2px 0 rgba(16, 24, 40, 0.05);
 }
 
 .admin-icon-well {
   display: inline-flex;
-  height: 2rem;
-  width: 2rem;
+  height: 1.75rem;
+  width: 1.75rem;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border-radius: 0.625rem;
+  border-radius: 0.5rem;
   background-color: #ecf3ff;
   color: #3641f5;
 }
@@ -60,11 +60,16 @@
 
 .admin-table thead th {
   background-color: #f9fafb;
-  font-size: 0.6875rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #667085;
+}
+
+.admin-table tbody td {
+  padding: 0.875rem 1.25rem;
 }
 
 .dark .admin-table thead th {
@@ -85,8 +90,8 @@
 }
 
 .dark .admin-card {
-  border-color: #1d2939;
-  background-color: rgba(255, 255, 255, 0.03);
+  border-color: #2c384c;
+  background-color: #1b2433;
   box-shadow: none;
 }
 
@@ -95,17 +100,11 @@
 }
 
 .dark .admin-dialog {
-  background-color: #1d2939;
+  background-color: #243044;
 }
 
 .admin-card-body {
-  padding: 0.875rem;
-}
-
-@media (min-width: 640px) {
-  .admin-card-body {
-    padding: 1rem;
-  }
+  padding: 1rem 1.125rem;
 }
 
 .admin-scrollbar::-webkit-scrollbar {

@@ -70,7 +70,7 @@ export default function ProjectsPage() {
   if (!projects && !error) return <AdminLoading message="Loading projects…" />;
 
   return (
-    <div className="admin-content space-y-3">
+    <div className="admin-content space-y-6">
       <AdminPageHeader
         title="Projects"
         actions={<AdminAddButton label="New project" onClick={() => setOpen(true)} />}
@@ -85,7 +85,7 @@ export default function ProjectsPage() {
           />
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {projects?.map((project) => (
             <Link key={project.id} to={`/projects/${project.id}`} className="admin-card transition hover:border-brand-300 hover:shadow-sm">
               <div className="admin-card-body">

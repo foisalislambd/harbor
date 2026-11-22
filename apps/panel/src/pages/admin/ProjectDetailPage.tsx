@@ -131,7 +131,7 @@ export default function ProjectDetailPage() {
   const quotaLabel = project.quota_bytes > 0 ? `${formatBytes(project.used_bytes)} / ${formatBytes(project.quota_bytes)}` : `${formatBytes(project.used_bytes)} stored`;
 
   return (
-    <div className="admin-content space-y-3">
+    <div className="admin-content space-y-6">
       <AdminPageHeader
         title={project.name}
         actions={

@@ -69,7 +69,7 @@ export default function DestinationsPage() {
   if (!items && !error) return <AdminLoading message="Loading destinations…" />;
 
   return (
-    <div className="admin-content space-y-4">
+    <div className="admin-content space-y-6">
       <AdminPageHeader
         title="Destinations"
         actions={isOwner ? (

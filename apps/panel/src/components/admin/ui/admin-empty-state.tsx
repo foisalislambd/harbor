@@ -9,9 +9,9 @@ type Props = {
 
 export function AdminEmptyState({ icon: Icon, title, action }: Props) {
   return (
-    <div className="flex flex-col items-center px-6 py-16 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 dark:bg-white/5">
-        <Icon className="h-7 w-7 text-gray-400 dark:text-gray-500" aria-hidden />
+    <div className="flex flex-col items-center px-6 py-8 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gray-100 dark:bg-white/10">
+        <Icon className="h-6 w-6 text-gray-400 dark:text-gray-300" aria-hidden />
       </div>
       <h3 className="mt-4 text-base font-semibold text-gray-900 dark:text-white">{title}</h3>
       {action && <div className="mt-6">{action}</div>}

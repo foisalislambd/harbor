@@ -104,7 +104,7 @@ export default function BackupsPage() {
   }
 
   return (
-    <div className="admin-content space-y-3">
+    <div className="admin-content space-y-6">
       <AdminPageHeader
         title="Backups"
       />

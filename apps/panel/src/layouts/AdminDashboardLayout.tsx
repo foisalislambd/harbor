@@ -13,7 +13,7 @@ export function AdminDashboardLayout() {
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <AdminHeader />
           <main className="admin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-            <div className="w-full px-4 py-4 sm:px-6">
+            <div className="mx-auto w-full max-w-6xl px-6 py-6">
               <Outlet />
             </div>
           </main>

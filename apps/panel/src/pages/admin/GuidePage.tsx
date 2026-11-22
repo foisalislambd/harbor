@@ -37,7 +37,7 @@ export default function GuidePage() {
   const cli = `harbor push -file backup.tar.gz -token hb_your_project_key -endpoint ${origin} -name nightly -kind archive -source my-app`;
 
   return (
-    <div className="admin-content space-y-3">
+    <div className="admin-content space-y-6">
       <AdminPageHeader
         title="API guide"
         actions={

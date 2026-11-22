@@ -39,7 +39,7 @@ export default function ActivityPage() {
   if (!items) return <AdminLoading message="Loading activity…" />;
 
   return (
-    <div className="admin-content space-y-4">
+    <div className="admin-content space-y-6">
       <AdminPageHeader
         title="Activity"
       />

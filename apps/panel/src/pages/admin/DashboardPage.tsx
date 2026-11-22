@@ -36,21 +36,21 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="admin-content space-y-3">
+    <div className="admin-content space-y-5">
       <DashboardWelcome />
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {cards.map((card) => {
           const Icon = card.icon;
           return (
             <div key={card.label} className="admin-card">
               <div className="admin-card-body">
-                <div className="flex items-center gap-1.5">
-                  <span className="admin-icon-well h-5 w-5 rounded-md">
-                    <Icon className="h-3 w-3" aria-hidden />
+                <div className="flex items-center gap-2">
+                  <span className="admin-icon-well">
+                    <Icon className="h-4 w-4" aria-hidden />
                   </span>
-                  <p className="text-xs font-medium text-gray-500">{card.label}</p>
+                  <p className="text-sm font-medium text-gray-500">{card.label}</p>
                 </div>
-                <p className="mt-2 truncate text-xl font-semibold tracking-tight text-gray-900 dark:text-white">{card.value}</p>
+                <p className="mt-2 truncate text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">{card.value}</p>
               </div>
             </div>
           );
@@ -63,7 +63,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid gap-3 xl:grid-cols-5">
+      <div className="grid gap-4 xl:grid-cols-5">
         <section className="admin-card xl:col-span-3">
           <div className="admin-card-body">
             <AdminSectionTitle

@@ -13,12 +13,12 @@ export function AdminHeader() {
   const [query, setQuery] = useState("");
 
   return (
-    <header className="admin-topbar sticky top-0 z-30 w-full bg-white dark:bg-gray-900">
-      <div className="flex h-full items-center gap-3 px-3 sm:gap-4 sm:px-4">
+    <header className="admin-topbar sticky top-0 z-30 w-full bg-white dark:bg-[#111827]">
+      <div className="flex h-full items-center gap-3 px-4 sm:px-6">
         <button
           type="button"
           onClick={toggleMobileSidebar}
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/30 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-white/5 ${isDesktop ? "lg:hidden" : ""}`}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/30 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-white/5 ${isDesktop ? "lg:hidden" : ""}`}
           aria-label={!isDesktop && isMobileOpen ? "Close menu" : "Open menu"}
           aria-expanded={!isDesktop ? isMobileOpen : undefined}
         >
@@ -39,13 +39,13 @@ export function AdminHeader() {
           }}
         >
           <label className="relative block">
-            <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search backups"
-              className="h-9 w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pr-16 pl-9 text-sm text-gray-800 outline-none placeholder:text-gray-400 focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-500/20 dark:border-gray-800 dark:bg-white/5 dark:text-white"
+              className="h-10 w-full rounded-lg border border-gray-200 bg-gray-50 pr-16 pl-10 text-sm text-gray-800 outline-none placeholder:text-gray-400 focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-500/20 dark:border-[#2c384c] dark:bg-[#0d1422] dark:text-white"
               aria-label="Search backups"
             />
             <kbd className="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-400 sm:inline dark:border-gray-700 dark:bg-gray-900">

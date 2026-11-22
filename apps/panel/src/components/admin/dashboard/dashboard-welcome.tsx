@@ -24,7 +24,7 @@ export function DashboardWelcome() {
   const name = admin?.username ?? adminConfig.brand.name;
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-brand-200/60 bg-gradient-to-br from-brand-500 via-brand-600 to-brand-800 p-4 sm:p-5 dark:border-brand-500/20">
+    <div className="relative overflow-hidden rounded-xl border border-brand-200/60 bg-gradient-to-br from-brand-500 via-brand-600 to-brand-800 p-5 sm:p-6 dark:border-brand-500/20">
       <div
         className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-white/10 blur-2xl"
         aria-hidden
@@ -51,14 +51,14 @@ export function DashboardWelcome() {
         <div className="flex shrink-0 flex-wrap gap-2">
           <Link
             to="/projects"
-            className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-brand-600 shadow-sm transition hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-white px-4 text-sm font-semibold text-brand-600 shadow-sm transition hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
           >
             <FolderKanban className="h-4 w-4 shrink-0 text-brand-600" aria-hidden />
             <span className="text-brand-600">Manage projects</span>
           </Link>
           <Link
             to="/settings"
-            className="inline-flex items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/30 bg-white/15 px-4 text-sm font-semibold text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
           >
             <Settings className="h-4 w-4" />
             Settings

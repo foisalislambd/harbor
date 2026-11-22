@@ -159,7 +159,7 @@ export default function DestinationNewPage() {
 
   if (!providerId && !editing) {
     return (
-      <div className="admin-content space-y-4">
+      <div className="admin-content space-y-6">
         <AdminPageHeader
           title="Add destination"
           actions={<Link to="/destinations" className={quietButtonClass}>Back</Link>}
@@ -189,7 +189,7 @@ export default function DestinationNewPage() {
   }
 
   return (
-    <div className="admin-content space-y-4">
+    <div className="admin-content space-y-6">
       <AdminPageHeader
         title={editing ? `Edit ${form.name || "destination"}` : provider?.name || "Destination"}
         actions={<Link to="/destinations" className={quietButtonClass}>Back</Link>}
