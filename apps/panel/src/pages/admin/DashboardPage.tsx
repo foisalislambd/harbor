@@ -1,9 +1,9 @@
 import { DashboardWelcome } from "@/components/admin/dashboard/dashboard-welcome";
-import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
+import { AdminSectionTitle } from "@/components/admin/layout/admin-page-header";
 import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { formatBytes, formatWhen, api, type Stats } from "@/lib/harbor-api";
-import { Archive, Clock, FolderKanban, HardDrive } from "lucide-react";
+import { Activity, Archive, ArrowRight, Clock, FolderKanban, HardDrive } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 
@@ -43,12 +43,14 @@ export default function DashboardPage() {
           const Icon = card.icon;
           return (
             <div key={card.label} className="admin-card">
-              <div className="admin-card-body flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium tracking-wide text-gray-500 uppercase">{card.label}</p>
-                  <p className="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{card.value}</p>
+              <div className="admin-card-body">
+                <div className="flex items-center gap-1.5">
+                  <span className="admin-icon-well h-5 w-5 rounded-md">
+                    <Icon className="h-3 w-3" aria-hidden />
+                  </span>
+                  <p className="text-xs font-medium text-gray-500">{card.label}</p>
                 </div>
-                <Icon className="h-5 w-5 text-brand-500" />
+                <p className="mt-2 truncate text-xl font-semibold tracking-tight text-gray-900 dark:text-white">{card.value}</p>
               </div>
             </div>
           );
@@ -64,25 +66,26 @@ export default function DashboardPage() {
       <div className="grid gap-3 xl:grid-cols-5">
         <section className="admin-card xl:col-span-3">
           <div className="admin-card-body">
-            <AdminPageHeader
+            <AdminSectionTitle
+              icon={Archive}
               title="Recent backups"
               actions={
-                <Link to="/backups" className="text-sm font-medium text-brand-600 hover:text-brand-700">
+                <Link to="/backups" className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-700">
                   View all
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
                 </Link>
               }
             />
             {stats.recent_backups.length === 0 ? (
-              <AdminEmptyState
-                icon={Archive}
-                title="No backups yet"
-                description="Create a project, copy its API key, and push an archive from any application."
-              />
+              <AdminEmptyState icon={Archive} title="No backups yet" />
             ) : (
               <ul className="divide-y divide-gray-100 dark:divide-gray-800">
                 {stats.recent_backups.map((backup) => (
-                  <li key={backup.id} className="flex items-center justify-between gap-3 py-3">
-                    <div className="min-w-0">
+                  <li key={backup.id} className="flex items-center gap-3 py-3">
+                    <span className="admin-icon-well">
+                      <Archive className="h-4 w-4" aria-hidden />
+                    </span>
+                    <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{backup.name}</p>
                       <p className="truncate text-xs text-gray-500">
                         {backup.project_name} · {backup.kind} · {formatBytes(backup.size_bytes)}
@@ -97,17 +100,20 @@ export default function DashboardPage() {
         </section>
         <section className="admin-card xl:col-span-2">
           <div className="admin-card-body">
-            <AdminPageHeader title="Activity" />
-            {stats.recent_activity.length === 0 ? (
-              <p className="text-sm text-gray-500">Actions on this instance will show up here.</p>
-            ) : (
-              <ul className="space-y-3">
+            <AdminSectionTitle icon={Activity} title="Activity" />
+            {stats.recent_activity.length === 0 ? null : (
+              <ul className="mt-3 space-y-3">
                 {stats.recent_activity.map((event) => (
-                  <li key={event.id}>
-                    <p className="text-sm font-medium text-gray-900 dark:text-white">{event.action}</p>
-                    <p className="text-xs text-gray-500">
-                      {event.actor} · {formatWhen(event.created_at)}
-                    </p>
+                  <li key={event.id} className="flex items-start gap-2.5">
+                    <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" aria-hidden />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 capitalize dark:text-white">
+                        {event.action.replaceAll(".", " ").replaceAll("_", " ")}
+                      </p>
+                      <p className="truncate text-xs text-gray-500">
+                        {event.actor.replace(/^user:/, "").replace(/^key:/, "")} · {formatWhen(event.created_at)}
+                      </p>
+                    </div>
                   </li>
                 ))}
               </ul>

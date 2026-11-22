@@ -225,7 +225,13 @@ func Open(dataDir string) (*Store, error) {
 }
 
 func sqliteDSN(path string) string {
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"}
+	// A leading slash makes Windows paths file:///C:/... instead of file://C:/...,
+	// which modernc.org/sqlite rejects as an invalid URI authority.
+	p := filepath.ToSlash(path)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	u := url.URL{Scheme: "file", Path: p, RawQuery: "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)"}
 	return u.String()
 }
 

@@ -5,7 +5,7 @@ import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { ProviderLogo } from "@/components/provider-logo";
 import { dangerButtonClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
 import { api, formatBytes, type Destination, type DestinationList } from "@/lib/harbor-api";
-import { Cloud } from "lucide-react";
+import { Cloud, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { TelegramSignIn } from "./TelegramSignIn";
@@ -72,7 +72,12 @@ export default function DestinationsPage() {
     <div className="admin-content space-y-4">
       <AdminPageHeader
         title="Destinations"
-        actions={isOwner ? <Link to="/destinations/new" className={primaryButtonClass}>Add destination</Link> : undefined}
+        actions={isOwner ? (
+          <Link to="/destinations/new" className={primaryButtonClass}>
+            <Plus className="h-4 w-4" aria-hidden />
+            Add destination
+          </Link>
+        ) : undefined}
       />
       {error && <p className="text-sm text-error-500" role="alert">{error}</p>}
       {message && <p className="text-sm text-success-600" role="status">{message}</p>}
@@ -80,7 +85,7 @@ export default function DestinationsPage() {
 
       {items && items.length === 0 ? (
         <div className="admin-card">
-          <AdminEmptyState icon={Cloud} title="No destinations yet" description="Add storage and backups can be copied off this machine." />
+          <AdminEmptyState icon={Cloud} title="No destinations yet" />
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">

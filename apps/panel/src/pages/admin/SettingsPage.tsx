@@ -1,8 +1,9 @@
-import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
+import { AdminPageHeader, AdminSectionTitle } from "@/components/admin/layout/admin-page-header";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { useAdminAuth } from "@/components/admin/auth/admin-auth-provider";
 import { dangerButtonClass, fieldClass, labelClass, primaryButtonClass } from "@/lib/fields";
 import { api, formatBytes, type SessionUser, type Settings } from "@/lib/harbor-api";
+import { KeyRound, Server, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export default function SettingsPage() {
@@ -50,7 +51,9 @@ export default function SettingsPage() {
 
   return (
     <div className="admin-content space-y-3">
-      <AdminPageHeader title="Settings" />
+      <AdminPageHeader
+        title="Settings"
+      />
       {error && <p className="text-sm text-error-500">{error}</p>}
       {message && <p className="text-sm text-success-600">{message}</p>}
 
@@ -70,7 +73,7 @@ export default function SettingsPage() {
           }}
         >
           <div className="admin-card-body space-y-4">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Instance</h2>
+            <AdminSectionTitle icon={Server} title="Instance" description="Shown in the panel and API responses." />
             <label className="block max-w-md">
               <span className={labelClass}>Name</span>
               <input className={fieldClass} value={settings.instance_name} onChange={(e) => setSettings({ ...settings, instance_name: e.target.value })} readOnly={!isOwner} />
@@ -101,7 +104,7 @@ export default function SettingsPage() {
         }}
       >
         <div className="admin-card-body space-y-4">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-white">Your password</h2>
+          <AdminSectionTitle icon={KeyRound} title="Your password" description="Use at least 8 characters." />
           <div className="grid max-w-xl gap-3 md:grid-cols-2">
             <input className={fieldClass} type="password" placeholder="Current password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
             <input className={fieldClass} type="password" placeholder="New password" minLength={8} value={nextPassword} onChange={(e) => setNextPassword(e.target.value)} required />
@@ -112,7 +115,7 @@ export default function SettingsPage() {
 
       <section className="admin-card">
         <div className="admin-card-body space-y-4">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-white">Team</h2>
+          <AdminSectionTitle icon={Users} title="Team" description="Owners can add and remove panel users." />
           {isOwner && (
           <form
             className="grid gap-3 md:grid-cols-4"

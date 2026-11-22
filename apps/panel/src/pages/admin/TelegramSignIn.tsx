@@ -121,7 +121,7 @@ export function TelegramSignIn({
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleID}
-      className="admin-card max-h-[90dvh] w-full max-w-md overflow-y-auto"
+      className="admin-card admin-dialog max-h-[90dvh] w-full max-w-md overflow-y-auto"
       onClick={(event) => event.stopPropagation()}
     >
     <div className="admin-card-body space-y-4">

@@ -1,4 +1,4 @@
-import { AdminPageHeader } from "@/components/admin/layout/admin-page-header";
+import { AdminPageHeader, AdminSectionTitle } from "@/components/admin/layout/admin-page-header";
 import { ProviderLogo } from "@/components/provider-logo";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { dangerButtonClass, fieldClass, labelClass, primaryButtonClass, quietButtonClass, solidDangerButtonClass } from "@/lib/fields";
@@ -15,6 +15,7 @@ import {
   type Schedule,
   type Webhook,
 } from "@/lib/harbor-api";
+import { Archive, CalendarClock, Copy, KeyRound, Trash2, Webhook as WebhookIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -144,6 +145,7 @@ export default function ProjectDetailPage() {
                 .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not delete project"));
             }}
           >
+            <Trash2 className="h-4 w-4" aria-hidden />
             Delete project
           </button>
         }
@@ -228,10 +230,11 @@ export default function ProjectDetailPage() {
       {savedDestination && (
         <section className="admin-card">
           <div className="admin-card-body space-y-3">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Copy stored backups</h2>
-            <p className="text-sm text-gray-500">
-              New backups are copied when they arrive. This sends the ones already stored on this machine to {project.destination_name || "the selected destination"}.
-            </p>
+            <AdminSectionTitle
+              icon={Copy}
+              title="Copy stored backups"
+              description={`New backups are copied when they arrive. This sends the ones already stored on this machine to ${project.destination_name || "the selected destination"}.`}
+            />
             {project.destination_id !== savedDestination && (
               <p className="text-sm text-gray-500">Save the project first so this uses the destination you just chose.</p>
             )}
@@ -265,8 +268,7 @@ export default function ProjectDetailPage() {
 
       <section className="admin-card">
         <div className="admin-card-body space-y-4">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-white">API keys</h2>
-          <p className="text-sm text-gray-500">Send this key as Authorization: Bearer from the application. The full key is shown once.</p>
+          <AdminSectionTitle icon={KeyRound} title="API keys" description="Send this key as Authorization: Bearer from the application. The full key is shown once." />
           {freshToken && (
             <div className="rounded-xl bg-brand-50 p-3 text-sm break-all text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
               {freshToken}
@@ -301,8 +303,7 @@ export default function ProjectDetailPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="admin-card">
           <div className="admin-card-body space-y-4">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Expected schedule</h2>
-            <p className="text-sm text-gray-500">Harbor marks a schedule overdue when no backup arrives within the interval.</p>
+            <AdminSectionTitle icon={CalendarClock} title="Expected schedule" description="Harbor marks a schedule overdue when no backup arrives within the interval." />
             <form
               className="flex flex-col gap-2"
               onSubmit={(e) => {
@@ -333,8 +334,7 @@ export default function ProjectDetailPage() {
         </section>
         <section className="admin-card">
           <div className="admin-card-body space-y-4">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Webhooks</h2>
-            <p className="text-sm text-gray-500">Harbor POSTs JSON and signs the body with an X-Harbor-Signature header. The signing secret is shown once.</p>
+            <AdminSectionTitle icon={WebhookIcon} title="Webhooks" description="Harbor POSTs JSON and signs the body with an X-Harbor-Signature header. The signing secret is shown once." />
             {freshSecret && (
               <p className="rounded-xl bg-brand-50 p-3 text-xs break-all text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">
                 Signing secret: {freshSecret}
@@ -375,11 +375,16 @@ export default function ProjectDetailPage() {
 
       <section className="admin-card">
         <div className="admin-card-body">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white">Latest backups</h2>
-            <Link to={`/backups?project_id=${project.id}`} className="text-sm font-medium text-brand-600">Open in backups</Link>
-          </div>
-          <ul className="divide-y divide-gray-100 text-sm dark:divide-gray-800">
+          <AdminSectionTitle
+            icon={Archive}
+            title="Latest backups"
+            actions={
+              <Link to={`/backups?project_id=${project.id}`} className="text-sm font-medium text-brand-600">
+                Open in backups
+              </Link>
+            }
+          />
+          <ul className="mt-3 divide-y divide-gray-100 text-sm dark:divide-gray-800">
             {backups.map((backup) => (
               <li key={backup.id} className="flex justify-between gap-3 py-2">
                 <span className="truncate">{backup.name}</span>

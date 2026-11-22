@@ -3,7 +3,7 @@ import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { dangerButtonClass, fieldClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
 import { api, downloadBackup, formatBytes, formatWhen, type Backup, type Project } from "@/lib/harbor-api";
-import { Archive } from "lucide-react";
+import { Archive, Download, Search, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -105,7 +105,9 @@ export default function BackupsPage() {
 
   return (
     <div className="admin-content space-y-3">
-      <AdminPageHeader title="Backups" />
+      <AdminPageHeader
+        title="Backups"
+      />
       {error && <p className="text-sm text-error-500">{error}</p>}
 
       <form onSubmit={upload} className="admin-card">
@@ -134,27 +136,34 @@ export default function BackupsPage() {
               {file ? file.name : "Choose a file"}
             </span>
           </label>
-          <button className={primaryButtonClass} disabled={uploading} type="submit">{uploading ? "Uploading…" : "Upload"}</button>
+          <button className={primaryButtonClass} disabled={uploading} type="submit">
+            <Upload className="h-4 w-4" aria-hidden />
+            {uploading ? "Uploading…" : "Upload"}
+          </button>
         </div>
       </form>
 
       <div className="flex flex-col gap-3 sm:flex-row">
-        <input
-          className={fieldClass}
-          placeholder="Search name, source, checksum"
-          value={draftQuery}
-          onChange={(e) => setDraftQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              const next = new URLSearchParams(params);
-              const value = draftQuery.trim();
-              if (value) next.set("q", value);
-              else next.delete("q");
-              next.delete("page");
-              setParams(next);
-            }
-          }}
-        />
+        <label className="relative block min-w-0 flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden />
+          <input
+            className={`${fieldClass} pl-9`}
+            placeholder="Search name, source, checksum"
+            value={draftQuery}
+            onChange={(e) => setDraftQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const next = new URLSearchParams(params);
+                const value = draftQuery.trim();
+                if (value) next.set("q", value);
+                else next.delete("q");
+                next.delete("page");
+                setParams(next);
+              }
+            }}
+            aria-label="Search backups"
+          />
+        </label>
         <select
           className={fieldClass}
           value={projectId}
@@ -177,12 +186,12 @@ export default function BackupsPage() {
         <AdminLoading message="Loading backups…" />
       ) : items.length === 0 ? (
         <div className="admin-card">
-          <AdminEmptyState icon={Archive} title="No backups match" description="Upload a file here, or push one with the project API key." />
+          <AdminEmptyState icon={Archive} title="No backups match" />
         </div>
       ) : (
         <div className="admin-card overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="text-xs tracking-wide text-gray-500 uppercase">
+          <table className="admin-table w-full min-w-[720px] text-left text-sm">
+            <thead>
               <tr>
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Project</th>
@@ -201,7 +210,11 @@ export default function BackupsPage() {
                     <p className="text-xs text-gray-500">{backup.checksum_sha256.slice(0, 12)}…</p>
                   </td>
                   <td className="px-4 py-3">{backup.project_name}</td>
-                  <td className="px-4 py-3">{backup.kind}</td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium capitalize text-gray-700 dark:bg-white/10 dark:text-gray-200">
+                      {backup.kind}
+                    </span>
+                  </td>
                   <td className="px-4 py-3">{formatBytes(backup.size_bytes)}</td>
                   <td className="px-4 py-3">{formatWhen(backup.created_at)}</td>
                   <td className="px-4 py-3">
@@ -224,31 +237,35 @@ export default function BackupsPage() {
                       </button>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      className={quietButtonClass}
-                      onClick={() => {
-                        void downloadBackup(backup.id, backup.filename).catch((err: unknown) =>
-                          setError(err instanceof Error ? err.message : "Download failed"),
-                        );
-                      }}
-                    >
-                      Download
-                    </button>
-                    <button
-                      type="button"
-                      className={dangerButtonClass}
-                      onClick={() => {
-                        if (!confirm(`Delete ${backup.name}?`)) return;
-                        setError(null);
-                        void api(`/api/v1/backups/${backup.id}`, { method: "DELETE" })
-                          .then(() => load())
-                          .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not delete backup"));
-                      }}
-                    >
-                      Delete
-                    </button>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-1">
+                      <button
+                        type="button"
+                        className={quietButtonClass}
+                        onClick={() => {
+                          void downloadBackup(backup.id, backup.filename).catch((err: unknown) =>
+                            setError(err instanceof Error ? err.message : "Download failed"),
+                          );
+                        }}
+                      >
+                        <Download className="h-4 w-4" aria-hidden />
+                        Download
+                      </button>
+                      <button
+                        type="button"
+                        className={dangerButtonClass}
+                        onClick={() => {
+                          if (!confirm(`Delete ${backup.name}?`)) return;
+                          setError(null);
+                          void api(`/api/v1/backups/${backup.id}`, { method: "DELETE" })
+                            .then(() => load())
+                            .catch((err: unknown) => setError(err instanceof Error ? err.message : "Could not delete backup"));
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -45,9 +45,12 @@ export function AdminHeader() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search backups"
-              className="h-9 w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pr-4 pl-9 text-sm text-gray-800 outline-none placeholder:text-gray-400 focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-500/20 dark:border-gray-800 dark:bg-white/5 dark:text-white"
+              className="h-9 w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pr-16 pl-9 text-sm text-gray-800 outline-none placeholder:text-gray-400 focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-500/20 dark:border-gray-800 dark:bg-white/5 dark:text-white"
               aria-label="Search backups"
             />
+            <kbd className="pointer-events-none absolute top-1/2 right-2 hidden -translate-y-1/2 rounded-md border border-gray-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-gray-400 sm:inline dark:border-gray-700 dark:bg-gray-900">
+              Enter
+            </kbd>
           </label>
         </form>
 

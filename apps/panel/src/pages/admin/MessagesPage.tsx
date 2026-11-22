@@ -14,20 +14,12 @@ export default function AdminMessagesPage() {
             <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">0 conversations</p>
           </div>
           <div className="flex min-h-0 flex-1 overflow-y-auto">
-            <AdminEmptyState
-              icon={Inbox}
-              title="No messages yet"
-              description="When customers reach out, their conversations will appear here. Connect your messaging API to get started."
-            />
+            <AdminEmptyState icon={Inbox} title="No messages yet" />
           </div>
         </aside>
 
         <div className="admin-card hidden min-w-0 flex-1 flex-col md:flex">
-          <AdminEmptyState
-            icon={MessageCircle}
-            title="Select a conversation"
-            description="Choose a thread from the inbox to read and reply."
-          />
+          <AdminEmptyState icon={MessageCircle} title="Select a conversation" />
         </div>
       </div>
     </div>

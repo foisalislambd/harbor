@@ -4,7 +4,7 @@ import { AdminEmptyState } from "@/components/admin/ui/admin-empty-state";
 import { AdminLoading } from "@/components/admin/ui/admin-loading";
 import { fieldClass, labelClass, primaryButtonClass, quietButtonClass } from "@/lib/fields";
 import { api, formatBytes, type Project } from "@/lib/harbor-api";
-import { FolderKanban } from "lucide-react";
+import { Archive, FolderKanban, HardDrive } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -71,29 +71,36 @@ export default function ProjectsPage() {
 
   return (
     <div className="admin-content space-y-3">
-      <AdminPageHeader title="Projects" actions={<AdminAddButton label="New project" onClick={() => setOpen(true)} />} />
+      <AdminPageHeader
+        title="Projects"
+        actions={<AdminAddButton label="New project" onClick={() => setOpen(true)} />}
+      />
       {error && <p className="text-sm text-error-500">{error}</p>}
       {projects && projects.length === 0 ? (
         <div className="admin-card">
           <AdminEmptyState
             icon={FolderKanban}
             title="No projects yet"
-            description="Add the first application you want to back up. You can keep as many as you need."
             action={<AdminAddButton label="New project" onClick={() => setOpen(true)} />}
           />
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {projects?.map((project) => (
-            <Link key={project.id} to={`/projects/${project.id}`} className="admin-card transition hover:border-brand-300">
+            <Link key={project.id} to={`/projects/${project.id}`} className="admin-card transition hover:border-brand-300 hover:shadow-sm">
               <div className="admin-card-body">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h2 className="truncate text-base font-semibold text-gray-900 dark:text-white">{project.name}</h2>
-                    <p className="mt-1 line-clamp-2 text-sm text-gray-500">{project.description || "No description"}</p>
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="admin-icon-well h-10 w-10 rounded-xl">
+                      <FolderKanban className="h-[18px] w-[18px]" aria-hidden />
+                    </span>
+                    <div className="min-w-0">
+                      <h2 className="truncate text-base font-semibold text-gray-900 dark:text-white">{project.name}</h2>
+                      <p className="mt-0.5 line-clamp-2 text-sm text-gray-500">{project.description || "No description"}</p>
+                    </div>
                   </div>
                   <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
                       project.status === "active"
                         ? "bg-success-50 text-success-600 dark:bg-success-500/15 dark:text-success-500"
                         : "bg-orange-50 text-orange-700 dark:bg-orange-500/15 dark:text-orange-300"
@@ -102,14 +109,20 @@ export default function ProjectsPage() {
                     {project.status}
                   </span>
                 </div>
-                <dl className="mt-4 grid grid-cols-2 gap-2 text-xs text-gray-500">
-                  <div>
-                    <dt>Backups</dt>
-                    <dd className="text-sm font-medium text-gray-900 dark:text-white">{project.backup_count}</dd>
+                <dl className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 text-xs text-gray-500 dark:border-gray-800">
+                  <div className="flex items-center gap-2">
+                    <Archive className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+                    <div>
+                      <dt>Backups</dt>
+                      <dd className="text-sm font-medium text-gray-900 dark:text-white">{project.backup_count}</dd>
+                    </div>
                   </div>
-                  <div>
-                    <dt>Stored</dt>
-                    <dd className="text-sm font-medium text-gray-900 dark:text-white">{formatBytes(project.used_bytes)}</dd>
+                  <div className="flex items-center gap-2">
+                    <HardDrive className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+                    <div>
+                      <dt>Stored</dt>
+                      <dd className="text-sm font-medium text-gray-900 dark:text-white">{formatBytes(project.used_bytes)}</dd>
+                    </div>
                   </div>
                 </dl>
                 <p className="mt-3 text-xs text-gray-500">{project.destination_name ? `Also copies to ${project.destination_name}` : "This machine only"}</p>
@@ -124,7 +137,7 @@ export default function ProjectsPage() {
           <form
             onClick={(e) => e.stopPropagation()}
             onSubmit={createProject}
-            className="admin-card w-full max-w-lg"
+            className="admin-card admin-dialog w-full max-w-lg"
           >
             <div className="admin-card-body space-y-4">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">New project</h2>

@@ -105,19 +105,21 @@ export function AdminSidebar() {
                   onClick={closeMobileSidebar}
                   title={!showLabels ? item.name : undefined}
                   aria-current={active ? "page" : undefined}
-                  className={`group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${
+                  className={`relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40 ${
                     active
-                      ? "bg-brand-500 text-white shadow-sm shadow-brand-500/20"
+                      ? "bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-100"
                       : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/8"
                   } ${!showLabels ? "justify-center px-0" : ""}`}
                 >
-                  <Icon
-                    className={`h-[18px] w-[18px] shrink-0 ${
+                  <span
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
                       active
-                        ? "text-white"
-                        : "text-gray-500 group-hover:text-gray-700 dark:text-gray-400"
+                        ? "bg-white text-brand-600 shadow-sm dark:bg-brand-500/20 dark:text-brand-100"
+                        : "text-gray-500 dark:text-gray-400"
                     }`}
-                  />
+                  >
+                    <Icon className="h-4 w-4" />
+                  </span>
                   {showLabels && <span className="truncate">{item.name}</span>}
                 </Link>
               );

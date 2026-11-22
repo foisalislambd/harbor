@@ -173,12 +173,6 @@ export function ResourcePage({
                             ? `No ${resourceLabel.toLowerCase()} yet`
                             : `No ${pluralize(resourceLabel, 2)} match your filters`}
                         </p>
-                        {items.length === 0 && (
-                          <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-gray-500 dark:text-gray-400">
-                            This page is ready for your data. Connect your backend API to load,
-                            create, and manage {resourceLabel.toLowerCase()} from here.
-                          </p>
-                        )}
                       </td>
                     </tr>
                   ) : (
