@@ -1,5 +1,5 @@
 export const fieldClass =
-  "h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 dark:border-gray-700 dark:bg-[#0c111d] dark:text-white";
+  "admin-field h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none placeholder:text-gray-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20";
 
 export const labelClass = "mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300";
 
